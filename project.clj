@@ -4,4 +4,5 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :profiles {:dev {:dependencies [[org.clojure/test.check "0.9.0"]]}}
+  :monkeypatch-clojure-test false
   :dependencies [[org.clojure/clojure "1.9.0-alpha14"]])

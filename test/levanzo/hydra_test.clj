@@ -1,8 +1,7 @@
 (ns levanzo.hydra-test
   (:require [clojure.spec :as s]
             [clojure.test :refer :all]
-            [clojure.spec.gen :as gen]
-            [clojure.spec.test :as stest]
+            [levanzo.spec.utils :as spec-utils]
             [levanzo.hydra :as hydra]))
 
 (deftest uri-test
@@ -17,10 +16,8 @@
   (is (not (s/valid? ::hydra/uri "this is not a CURIE")))
   (is (not (s/valid? ::hydra/uri ":"))))
 
-;;(gen/generate (s/gen ::hydra/operation))
-
 (deftest handler-test
-  (let [handler (fn [args body request] {})]
+ (let [handler (fn [args body request] {})]
     (is (s/valid? ::hydra/handler handler))))
 
 (defn operation-jsonld
@@ -36,21 +33,20 @@
 
 (deftest operation-test
   (let [op (hydra/->Operation "hydra:Operation"
-                              "GET"
-                              "test:expects"
-                              "test:returns"
+                              {}
+                              {::hydra/method "GET"
+                               ::hydra/expects "test:expects"
+                               ::hydra/returns "test:returns"}
                               (fn [args body request]
                                 "operation handler"))]
     (is (s/valid? ::hydra/Operation op))
-    (s/exercise ::hydra/Operation)
-    (is (= "GET" (:method op)))
+    (is (= "GET" (-> op :operation-props ::hydra/method)))
     (is (= "hydra:Operation" (:term op)))
     (is (= "operation handler" ((:handler op) nil nil nil)))
-    (is (= "test:expects" (:expects op)))
-    (is (= "test:returns" (:returns op)))
+    (is (= "test:expects" (-> op :operation-props ::hydra/expects)))
+    (is (= "test:returns" (-> op :operation-props ::hydra/returns)))
     (is (= (operation-jsonld "GET" "test:expects" "test:returns")
            (hydra/->jsonld op)))))
-
 
 (deftest operation-helper-tests
   (let [null-handler (fn [_ _ _] true)
@@ -60,22 +56,24 @@
                   "PUT" hydra/put-operation
                   "DELETE" hydra/delete-operation}]
     (doseq [[expected-method operation-fn] expected]
-      (let [operation (operation-fn null-handler)]
+      (let [operation (operation-fn {::hydra/handler null-handler})]
         (is (= "hydra:Operation" (:term operation)))
-        (is (= expected-method (:method operation)))
+        (is (= expected-method (-> operation :operation-props ::hydra/method)))
         (is ((:handler operation) nil nil nil))
         (is (= (operation-jsonld expected-method) (hydra/->jsonld operation)))))))
 
 (deftest property-jsonld-tests
-  (let [options {::hydra/readonly true
+  (let [null-operation (hydra/get-operation {::hydra/handler (fn [_ _ _] true)})
+        options {::hydra/readonly true
                  ::hydra/writeonly false
                  ::hydra/required true
                  ::hydra/domain "test:Domain"
-                 ::hydra/range "test:Range"}
-        null-operation (hydra/get-operation (fn [_ _ _] true))
-        prop (hydra/->jsonld (hydra/property "test:prop" options))
-        link (hydra/->jsonld (hydra/link "test:link" options [null-operation]))
-        template (hydra/->jsonld (hydra/template-link "test:template" options [null-operation]))]
+                 ::hydra/range "test:Range"
+                 ::hydra/operations [null-operation]}
+
+        prop (hydra/->jsonld (hydra/property (assoc options ::hydra/property "test:prop")))
+        link (hydra/->jsonld (hydra/link (assoc options ::hydra/property "test:link")))
+        template (hydra/->jsonld (hydra/template-link (assoc options ::hydra/property "test:template")))]
 
     (is (= "hydra:Link" (-> link (get "hydra:property") (get "@type"))))
     (is (= "hydra:TemplatedLink" (-> template (get "hydra:property") (get "@type"))))
@@ -88,55 +86,18 @@
       (is (= "test:Domain" (-> supported (get "hydra:property") (get "rdfs:domain"))))
       (is (= "test:Range" (-> supported (get "hydra:property") (get "rdfs:range")))))))
 
+(deftest assoc-if-some-test
+  (is (= {"@id" ["ho" "http://test.com/hey"]} (hydra/assoc-if-some :id "@id" {:id "http://test.com/hey"} {"@id" "ho"})))
+  (is (= {"@id" "http://test.com/hey"} (hydra/assoc-if-some :id "@id" {:id "http://test.com/hey"} {})))
+  (is (= {"@id" ["hey" "ho" "http://test.com/hey" ]} (hydra/assoc-if-some :id "@id" {:id "http://test.com/hey"} {"@id" ["hey" "ho"]})))
+  (is (= {"@id" ["hey" "http://test.com/hey" ]} (hydra/assoc-if-some :id "@id" {:id "http://test.com/hey"} {"@id" ["hey" "http://test.com/hey"]}))))
+
+(deftest generic->jsonld-test
+  (is (= {"@id" "test"} (hydra/generic->jsonld {:id "test"} {})))
+  (is (= {"hydra:title" "test"} (hydra/generic->jsonld {:title "test"} {})))
+  (is (= {"hydra:title" "test"} (hydra/generic->jsonld {:title "test"} {"hydra:title" "other"})))
+  (is (= {"@type" "test"} (hydra/generic->jsonld {:type "test"} {})))
+  (is (= {"@type" ["other" "test"]} (hydra/generic->jsonld {:type "test"} {"@type" "other"}))))
+
 (deftest test-checkable-syms
-  (let [{:keys [total check-passed] :as results}
-        (-> (stest/check (stest/checkable-syms) {:clojure.spec.test.check/opts {:num-tests 5}})
-            stest/summarize-results)]
-    (prn results)
-    (is (= total check-passed))))
-
-(comment
-
-
-  (hydra/link "test:hey" {} [])
-
-  (def s (gen/sample (s/gen `hydra/link)))
-
-  (s/exercise-fn `hydra/link)
-
-  (-> (stest/check [`hydra/link `hydra/get-operation] {:clojure.spec.test.check/opts {:num-tests 2}})
-      stest/summarize-results
-      )
-
-  (gen/generate (s/gen ::hydra/operations))
-
-  (def args (gen/generate (s/gen (s/cat :property ::hydra/property
-                                        :hydra-property-options ::hydra/hydra-property-options
-                                        :operations (s/coll-of ::hydra/Operation)))))
-
-  args
-  (s/conform ::hydra/operations [(hydra/->Operation "a:blah" "GET" nil nil (fn [a b c] c))])
-  (count args)
-  (nth args 3)
-  (first s)
-  (gen/sample (s/gen ::hydra/Operation))
-
-  (gen/generate (s/gen ::hydra/term))
-
-  (def t (gen/generate (s/gen ::hydra/handler)))
-
-  (def t (gen/generate (s/gen (s/cat :options (s/keys :opt [::hydra/expects ::hydra/returns])
-                                     :handler ::hydra/handler))))
-
-  (def g (gen/generate (s/gen `hydra/get-operation)))
-  g
-
-  ((:handler (g {} (fn [_ _ _] true))) {} nil nil)
-
-  (gen/sample (s/gen (s/or :a int?
-                           :b string?)))
-
-
-  (prn )
-  (prn ())
-  )
+  (spec-utils/is-checked-syms))

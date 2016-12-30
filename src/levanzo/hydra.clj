@@ -3,12 +3,13 @@
             [clojure.test.check.generators :as tg]
             [clojure.string :as string]
             [levanzo.utils :refer [clean-nils]]
-            [levanzo.jsonld :refer [add-not-dup assoc-if-some set-if-some generic->jsonld]]))
+            [levanzo.jsonld :refer [add-not-dup assoc-if-some set-if-some]]))
 
 (defprotocol JSONLDSerialisable
   "Protocol that must be implemented by implemented by elements of the model that can
    be serialised as JSON-LD documents"
   (->jsonld [this]))
+
 
 ;; URI string
 (s/def ::uri (s/with-gen
@@ -37,6 +38,15 @@
 (s/def ::description string?)
 ;; Hydra common props for all Hydra model elements
 (s/def ::common-props (s/keys :opt [::id ::type ::title ::description]))
+
+(defn generic->jsonld
+  "Sets common RDF proeprties for all Hydra elements"
+  [element jsonld]
+  (->> jsonld
+       (set-if-some (::id element) "@id")
+       (assoc-if-some ::type "@type" element)
+       (set-if-some (::title element) "hydra:title")
+       (set-if-some (::description element) "hydra:description")))
 
 ;; hydra:Operation properties
 
@@ -187,7 +197,7 @@
 ;; List of operations associated to a link/template
 (s/def ::operations (s/coll-of ::Operation))
 
-;; An Hydra Link property
+;; A Hydra Link property
 (s/def ::SupportedProperty
   (s/keys :req-un [::term
                    ::is-link
@@ -320,3 +330,62 @@
   "Builds a Hydra property from a certain RDF property"
   [args]
   (supported-property false false (assoc args ::operations [])))
+
+
+;; Hydra Class
+
+;; A supported properties by a Hydra Class
+(s/def ::supported-properties (s/coll-of ::SupportedProperty))
+
+;; A Hydra supported class
+(s/def ::SupportedClass
+  (s/keys :req-un [::term
+                   ::common-props
+                   ::supported-properties
+                   ::operations]))
+
+(s/def ::class-args (s/keys :req [::id
+                                  ::operations
+                                  ::supported-properties]
+                            :un [::type
+                                 ::title
+                                 ::description]))
+
+(defrecord SupportedClass [term
+                           common-props
+                           supported-properties
+                           operations])
+
+;; Classes can be serialised as JSON-LD objects
+(extend-protocol JSONLDSerialisable levanzo.hydra.SupportedClass
+                 (->jsonld [this]
+                   (let [jsonld {"@type" "hydra:Class"
+                                 "hydra:supportedProperty" (mapv ->jsonld (-> this :supported-properties))
+                                 "hydra:supportedOperation" (mapv ->jsonld (-> this :operations))}]
+                     (->> jsonld
+                          clean-nils
+                          (generic->jsonld (:common-props this))))))
+
+(s/fdef class
+        :args (s/cat :class-args ::class-args)
+        :ret (s/and
+              ::SupportedClass
+              #(= (:term %) [:curie "hydra:Class"])
+              #(not (nil? (-> % :common-props ::id))))
+        :fn (s/and
+             #(= (-> % :ret :operations count) (-> % :args :class-args ::operations count))
+             #(= (-> % :ret :supported-properties count) (-> % :args :class-args ::supported-properties count))))
+
+(defn class [{:keys [:levanzo.hydra/id
+                     :levanzo.hydra/operations
+                     :levanzo.hydra/supported-properties
+                     :levanzo.hydra/type
+                     :levanzo.hydra/title
+                     :levanzo.hydra/description]}]
+  (->SupportedClass "hydra:Class"
+                    (clean-nils {::id id
+                                 ::title title
+                                 ::description description
+                                 ::type type})
+                    supported-properties
+                    operations))

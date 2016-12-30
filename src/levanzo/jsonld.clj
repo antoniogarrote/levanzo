@@ -62,10 +62,3 @@
   (if (some? source)
     (assoc jsonld target source)
     jsonld))
-
-(defn generic->jsonld [element jsonld]
-  (->> jsonld
-       (set-if-some (:id element) "@id")
-       (assoc-if-some :type "@type" element)
-       (set-if-some (:title element) "hydra:title")
-       (set-if-some (:description element) "hydra:description")))

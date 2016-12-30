@@ -20,6 +20,13 @@
  (let [handler (fn [args body request] {})]
     (is (s/valid? ::hydra/handler handler))))
 
+(deftest generic->jsonld-test
+  (is (= {"@id" "test"} (hydra/generic->jsonld {::hydra/id "test"} {})))
+  (is (= {"hydra:title" "test"} (hydra/generic->jsonld {::hydra/title "test"} {})))
+  (is (= {"hydra:title" "test"} (hydra/generic->jsonld {::hydra/title "test"} {"hydra:title" "other"})))
+  (is (= {"@type" "test"} (hydra/generic->jsonld {::hydra/type "test"} {})))
+  (is (= {"@type" ["other" "test"]} (hydra/generic->jsonld {::hydra/type "test"} {"@type" "other"}))))
+
 (defn operation-jsonld
   ([method expects returns]
    (->> {"@type" "hydra:Operation"
@@ -85,3 +92,38 @@
       (is (= false (-> supported (get "hydra:writeonly"))))
       (is (= "test:Domain" (-> supported (get "hydra:property") (get "rdfs:domain"))))
       (is (= "test:Range" (-> supported (get "hydra:property") (get "rdfs:range")))))))
+
+(deftest class-jsonld-tests
+  (let [class (hydra/class {::hydra/id ":MyClass"
+                            ::hydra/title "MyClass"
+                            ::hydra/description "Test class"
+                            ::hydra/operations [(hydra/delete-operation {::hydra/title "Destroys a MyClass instance"
+                                                                         ::hydra/handler (fn [_ _ _] "Destroyed")})]
+                            ::hydra/supported-properties [(hydra/property {::hydra/property "foaf:name"
+                                                                           ::hydra/required true
+                                                                           ::hydra/range "xsd:string"})
+                                                          (hydra/property {::hydra/property "foaf:age"
+                                                                           ::hydra/range "xsd:decimal"})]})]
+    (is (= {"@id" ":MyClass"
+            "@type" "hydra:Class"
+            "hydra:title" "MyClass"
+            "hydra:description" "Test class"
+            "hydra:supportedProperty"
+            [{"@type" "hydra:SupportedProperty"
+              "hydra:property"
+              {"@id" "foaf:name"
+               "@type" "rdf:Property"
+               "rdfs:range" "xsd:string"
+               "hydra:supportedOperation" []}
+              "hydra:required" true}
+             {"@type" "hydra:SupportedProperty"
+              "hydra:property"
+              {"@id" "foaf:age"
+               "@type" "rdf:Property"
+               "rdfs:range" "xsd:decimal"
+               "hydra:supportedOperation" []}}]
+            "hydra:supportedOperation"
+            [{"@type" "hydra:Operation"
+              "hydra:method" "DELETE"
+              "hydra:title" "Destroys a MyClass instance"}]}
+           (hydra/->jsonld class)))))

@@ -85,19 +85,3 @@
       (is (= false (-> supported (get "hydra:writeonly"))))
       (is (= "test:Domain" (-> supported (get "hydra:property") (get "rdfs:domain"))))
       (is (= "test:Range" (-> supported (get "hydra:property") (get "rdfs:range")))))))
-
-(deftest assoc-if-some-test
-  (is (= {"@id" ["ho" "http://test.com/hey"]} (hydra/assoc-if-some :id "@id" {:id "http://test.com/hey"} {"@id" "ho"})))
-  (is (= {"@id" "http://test.com/hey"} (hydra/assoc-if-some :id "@id" {:id "http://test.com/hey"} {})))
-  (is (= {"@id" ["hey" "ho" "http://test.com/hey" ]} (hydra/assoc-if-some :id "@id" {:id "http://test.com/hey"} {"@id" ["hey" "ho"]})))
-  (is (= {"@id" ["hey" "http://test.com/hey" ]} (hydra/assoc-if-some :id "@id" {:id "http://test.com/hey"} {"@id" ["hey" "http://test.com/hey"]}))))
-
-(deftest generic->jsonld-test
-  (is (= {"@id" "test"} (hydra/generic->jsonld {:id "test"} {})))
-  (is (= {"hydra:title" "test"} (hydra/generic->jsonld {:title "test"} {})))
-  (is (= {"hydra:title" "test"} (hydra/generic->jsonld {:title "test"} {"hydra:title" "other"})))
-  (is (= {"@type" "test"} (hydra/generic->jsonld {:type "test"} {})))
-  (is (= {"@type" ["other" "test"]} (hydra/generic->jsonld {:type "test"} {"@type" "other"}))))
-
-(deftest test-checkable-syms
-  (spec-utils/is-checked-syms))

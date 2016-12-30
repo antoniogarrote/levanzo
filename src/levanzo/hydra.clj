@@ -2,80 +2,13 @@
   (:require [clojure.spec :as s]
             [clojure.test.check.generators :as tg]
             [clojure.string :as string]
-            [levanzo.utils :refer [clean-nils]]))
+            [levanzo.utils :refer [clean-nils]]
+            [levanzo.jsonld :refer [add-not-dup assoc-if-some set-if-some generic->jsonld]]))
 
 (defprotocol JSONLDSerialisable
   "Protocol that must be implemented by implemented by elements of the model that can
    be serialised as JSON-LD documents"
   (->jsonld [this]))
-
-;; list without duplicates
-(s/def ::list-no-dups (s/with-gen
-                        (s/and
-                         ;; it has to be a collection
-                         (s/coll-of any?)
-                         ;; after transforming collection into set, the number of items is the same
-                         #(= (->> %
-                                  (into #{})
-                                  count)
-                             (count %)))
-                        ;; we generate a vector of ints for the tests
-                        #(tg/fmap distinct (tg/vector tg/int))))
-(s/fdef add-not-dup
-        :args (s/cat :xs ::list-no-dups
-                     :y any?)
-        :ret ::list-no-dups
-        :fn (s/or
-             ;; if we don't find the element in the list,
-             ;; the length of the args collection and output colleciton
-             ;; must be the same
-             :not-found #(= (-> % :args :xs)
-                            (-> % :ret))
-             ;; if the element is in the list, the length of the ret collection
-             ;; is one element bigger than the arg collection, and the new
-             ;; element is at the end
-             :found (s/and
-                     #(= (inc (count (-> % :args :xs)))
-                         (count (-> % :ret)))
-                     #(= (-> % :args :y)
-                         (last (-> % :ret))))))
-(defn add-not-dup
-  "Adds y to xs if y is not present in xs"
-  [xs y]
-  (->> (concat xs [y])
-       (reduce (fn [[xs m] x]
-                 (if (some? (get m x))
-                   [xs m]
-                   [(concat xs [x]) (assoc m x true)]))
-               [[]{}])
-       first))
-
-(defn assoc-if-some
-  "Assocs a value to target map with property target if source property is in the source map"
-  [source target element jsonld]
-  (if (some? (get element source))
-    (let [source-value (get element source)
-          target-value (get jsonld target)]
-      (cond
-        (nil? target-value) (assoc jsonld target source-value)
-        (and (coll? target-value)
-             (not (map? target-value))) (assoc jsonld target (distinct (concat target-value [source-value])))
-        :else (assoc jsonld target (distinct [target-value source-value ]))))
-    jsonld))
-
-(defn set-if-some
-  "Sets a property in the target if it exists in the source"
-  [source target jsonld]
-  (if (some? source)
-    (assoc jsonld target source)
-    jsonld))
-
-(defn generic->jsonld [element jsonld]
-  (->> jsonld
-       (set-if-some (:id element) "@id")
-       (assoc-if-some :type "@type" element)
-       (set-if-some (:title element) "hydra:title")
-       (set-if-some (:description element) "hydra:description")))
 
 ;; URI string
 (s/def ::uri (s/with-gen

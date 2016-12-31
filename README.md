@@ -1,4 +1,4 @@
-# levanzo
+# levanzo [![CircleCI](https://circleci.com/gh/antoniogarrote/levanzo.svg?style=svg)](https://circleci.com/gh/antoniogarrote/levanzo)
 
 A Clojure library designed to ... well, that part is up to you.
 

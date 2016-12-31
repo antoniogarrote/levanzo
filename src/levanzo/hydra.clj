@@ -390,10 +390,82 @@
                     supported-properties
                     operations))
 
+;; Hydra Collection
+
+;; Is this collection paginated?
+(s/def ::is-paginated boolean?)
+;; Class of the collection members
+(s/def ::member-class ::term)
+
+(s/def ::Collection
+  (s/keys :req-un [::term
+                   ::common-props
+                   ::is-paginated
+                   ::member-class
+                   ::operations]))
+
+(s/def ::collection-args (s/keys :req [::operations
+                                       ::is-paginated
+                                       ::member-class]
+                                 :un [::id
+                                      ::type
+                                      ::title
+                                      ::description]))
+
+(defrecord Collection [term
+                       is-paginated
+                       member-class
+                       common-props
+                       operations])
+
+;; Collections can be serialised as JSON-LD objects
+(extend-protocol JSONLDSerialisable levanzo.hydra.Collection
+                 (->jsonld [this]
+                   (let [type (if (:is-paginated this)
+                                ["hydra:Class" "hydra:PagedCollection" "hydra:Collection"]
+                                ["hydra:Class" "hydra:Collection"])
+                         jsonld {"hydra:supportedOperation" (mapv ->jsonld (-> this :operations))
+                                 "lvz:memberClass" (:member-class this)
+                                 "@type" type}]
+                     (->> jsonld
+                          clean-nils
+                          (generic->jsonld (:common-props this))))))
+
+(s/fdef collection
+        :args (s/cat :collection-args ::collection-args)
+        :ret (s/and
+              ::Collection
+              #(= (:term %) [:curie "hydra:Collection"])
+              #(not (nil? (-> % :member-class)))
+              #(not (nil? (-> % :is-paginated))))
+        :fn (s/and
+             #(= (-> % :ret :operations count) (-> % :args :collection-args ::operations count))))
+
+(defn collection [{:keys [:levanzo.hydra/is-paginated
+                          :levanzo.hydra/member-class
+                          :levanzo.hydra/operations
+                          :levanzo.hydra/id
+                          :levanzo.hydra/type
+                          :levanzo.hydra/title
+                          :levanzo.hydra/description]}]
+  (->Collection "hydra:Collection"
+                is-paginated
+                member-class
+                (clean-nils {::id id
+                             ::title title
+                             ::description description
+                             ::type type})
+                operations))
+
+
+
 ;; Hydra ApiDocumentation
 
 ;; Supported classes by a Hydra ApiDocumentation
-(s/def ::supported-classes (s/coll-of ::SupportedClass :gen-max 2))
+(s/def ::supported-classes (s/coll-of (s/or
+                                       ::SupportedClass
+                                       ::Collection)
+                                      :gen-max 2))
 
 (s/def ::ApiDocumentation
   (s/keys :req-un [::term

@@ -128,6 +128,18 @@
             "hydra:title" "Destroys a MyClass instance"}]}
          (hydra/->jsonld test-class))))
 
+(deftest collection-jsonld-tests
+  (let [jsonld (hydra/->jsonld (hydra/collection {::hydra/id ":MyCollection"
+                                                  ::hydra/title "My Collection"
+                                                  ::hydra/description "A test collection"
+                                                  ::hydra/is-paginated false
+                                                  ::hydra/member-class "test:Class"}))]
+    (is (= ":MyCollection" (get jsonld "@id")))
+    (is (= "My Collection") (get jsonld "hydra:title"))
+    (is (= "A test collection" (get jsonld "hydra:description")))
+    (is (= #{"hydra:Class" "hydra:Collection"} (into #{} (get jsonld "@type"))))
+    (is (= "test:Class" (get jsonld "lvz:memberClass")))))
+
 (deftest api-documentation-jsonld-tests
   (let [jsonld (hydra/->jsonld (hydra/api {::hydra/id ":MyApi"
                                            ::hydra/title "My Api"

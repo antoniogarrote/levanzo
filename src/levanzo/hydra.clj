@@ -334,8 +334,8 @@
 
 ;; Hydra Class
 
-;; A supported properties by a Hydra Class
-(s/def ::supported-properties (s/coll-of ::SupportedProperty))
+;; Supported properties by a Hydra Class
+(s/def ::supported-properties (s/coll-of ::SupportedProperty :gen-max 2))
 
 ;; A Hydra supported class
 (s/def ::SupportedClass
@@ -389,3 +389,52 @@
                                  ::type type})
                     supported-properties
                     operations))
+
+;; Hydra ApiDocumentation
+
+;; Supported classes by a Hydra ApiDocumentation
+(s/def ::supported-classes (s/coll-of ::SupportedClass :gen-max 2))
+
+(s/def ::ApiDocumentation
+  (s/keys :req-un [::term
+                   ::common-props
+                   ::supported-classes]))
+
+(s/def ::api-args (s/keys :req [::supported-classes]
+                          :un [::type
+                               ::title
+                               ::description
+                               ::id]))
+
+(defrecord ApiDocumentation [term
+                             common-props
+                             supported-classes])
+
+;; ApiDocumentations can be serialised as JSON-LD objects
+(extend-protocol JSONLDSerialisable levanzo.hydra.ApiDocumentation
+                 (->jsonld [this]
+                   (let [jsonld {"@type" "hydra:ApiDocumentation"
+                                 "hydra:supportedClass" (mapv ->jsonld (-> this :supported-classes))}]
+                     (->> jsonld
+                          (generic->jsonld (:common-props this))))))
+
+(s/fdef api
+        :args (s/cat :api-args ::api-args)
+        :ret (s/and
+              ::ApiDocumentation
+              #(= (:term %) [:curie "hydra:ApiDocumentation"]))
+        :fn (s/and
+             #(= (-> % :ret :supported-classes count) (-> % :args :api-args ::supported-classes count))))
+(defn api
+  "Defines a Hydra ApiDocumentation element"
+  [{:keys [:levanzo.hydra/supported-classes
+           :levanzo.hydra/type
+           :levanzo.hydra/title
+           :levanzo.hydra/description
+           :levanzo.hydra/id]}]
+  (->ApiDocumentation "hydra:ApiDocumentation"
+                      (clean-nils {::id id
+                                   ::title title
+                                   ::description description
+                                   ::type type})
+                      supported-classes))

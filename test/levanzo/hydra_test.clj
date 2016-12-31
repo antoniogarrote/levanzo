@@ -93,37 +93,49 @@
       (is (= "test:Domain" (-> supported (get "hydra:property") (get "rdfs:domain"))))
       (is (= "test:Range" (-> supported (get "hydra:property") (get "rdfs:range")))))))
 
+(def test-class (hydra/class {::hydra/id ":MyClass"
+                              ::hydra/title "MyClass"
+                              ::hydra/description "Test class"
+                              ::hydra/operations [(hydra/delete-operation {::hydra/title "Destroys a MyClass instance"
+                                                                           ::hydra/handler (fn [_ _ _] "Destroyed")})]
+                              ::hydra/supported-properties [(hydra/property {::hydra/property "foaf:name"
+                                                                             ::hydra/required true
+                                                                             ::hydra/range "xsd:string"})
+                                                            (hydra/property {::hydra/property "foaf:age"
+                                                                             ::hydra/range "xsd:decimal"})]}))
 (deftest class-jsonld-tests
-  (let [class (hydra/class {::hydra/id ":MyClass"
-                            ::hydra/title "MyClass"
-                            ::hydra/description "Test class"
-                            ::hydra/operations [(hydra/delete-operation {::hydra/title "Destroys a MyClass instance"
-                                                                         ::hydra/handler (fn [_ _ _] "Destroyed")})]
-                            ::hydra/supported-properties [(hydra/property {::hydra/property "foaf:name"
-                                                                           ::hydra/required true
-                                                                           ::hydra/range "xsd:string"})
-                                                          (hydra/property {::hydra/property "foaf:age"
-                                                                           ::hydra/range "xsd:decimal"})]})]
-    (is (= {"@id" ":MyClass"
-            "@type" "hydra:Class"
-            "hydra:title" "MyClass"
-            "hydra:description" "Test class"
-            "hydra:supportedProperty"
-            [{"@type" "hydra:SupportedProperty"
-              "hydra:property"
-              {"@id" "foaf:name"
-               "@type" "rdf:Property"
-               "rdfs:range" "xsd:string"
-               "hydra:supportedOperation" []}
-              "hydra:required" true}
-             {"@type" "hydra:SupportedProperty"
-              "hydra:property"
-              {"@id" "foaf:age"
-               "@type" "rdf:Property"
-               "rdfs:range" "xsd:decimal"
-               "hydra:supportedOperation" []}}]
-            "hydra:supportedOperation"
-            [{"@type" "hydra:Operation"
-              "hydra:method" "DELETE"
-              "hydra:title" "Destroys a MyClass instance"}]}
-           (hydra/->jsonld class)))))
+  (is (= {"@id" ":MyClass"
+          "@type" "hydra:Class"
+          "hydra:title" "MyClass"
+          "hydra:description" "Test class"
+          "hydra:supportedProperty"
+          [{"@type" "hydra:SupportedProperty"
+            "hydra:property"
+            {"@id" "foaf:name"
+             "@type" "rdf:Property"
+             "rdfs:range" "xsd:string"
+             "hydra:supportedOperation" []}
+            "hydra:required" true}
+           {"@type" "hydra:SupportedProperty"
+            "hydra:property"
+            {"@id" "foaf:age"
+             "@type" "rdf:Property"
+             "rdfs:range" "xsd:decimal"
+             "hydra:supportedOperation" []}}]
+          "hydra:supportedOperation"
+          [{"@type" "hydra:Operation"
+            "hydra:method" "DELETE"
+            "hydra:title" "Destroys a MyClass instance"}]}
+         (hydra/->jsonld test-class))))
+
+(deftest api-documentation-jsonld-tests
+  (let [jsonld (hydra/->jsonld (hydra/api {::hydra/id ":MyApi"
+                                           ::hydra/title "My Api"
+                                           ::hydra/description "Test API"
+                                           ::hydra/supported-classes [test-class]}))]
+    (is (= ":MyApi" (get jsonld "@id")))
+    (is (= "My Api" (get jsonld "hydra:title")))
+    (is (= "Test API" (get jsonld "hydra:description")))
+    (is (= "hydra:ApiDocumentation" (get jsonld "@type")))
+    (is (= 1 (count (get jsonld "hydra:supportedClass"))))
+    (is (= ":MyClass" (-> jsonld (get "hydra:supportedClass") first (get "@id"))))))

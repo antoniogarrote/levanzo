@@ -23,8 +23,26 @@
                  (s/and string? #(re-matches #".*\:.+" %))
                  #(s/gen #{"hydra:Class" "foaf:name" "xsd:string" "sorg:country" ":test"})))
 ;; Hydra vocabulary term for this element in the model
-(s/def ::term (s/or :uri ::uri
-                    :curie ::curie))
+(s/def ::term (s/or
+               :uri ::uri
+               :curie ::curie))
+
+;; URI path definitions
+(s/def ::relative-path (s/with-gen
+                         (s/and string?
+                                #(re-matches #"^([a-zA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+(\/?([a-zA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+)*$" %))
+                         #(tg/fmap (fn [xs] (string/join "/" xs))
+                                   (tg/vector tg/string-alphanumeric 1 5))))
+
+(s/def ::absolute-path (s/with-gen
+                         (s/and string?
+                                #(re-matches #"^\/([a-zA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+(\/?([a-zA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+)*$" %))
+                         #(tg/fmap (fn [xs] (str "/" (string/join "/" xs)))
+                                   (tg/vector tg/string-alphanumeric 1 5))))
+
+(s/def ::path (s/or
+               :relative-path ::relative-path
+               :absolute-path ::absolute-path))
 
 ;; Common JSON-LD options
 
@@ -459,20 +477,31 @@
 
 
 
+
 ;; Hydra ApiDocumentation
 
 ;; Supported classes by a Hydra ApiDocumentation
 (s/def ::supported-classes (s/coll-of (s/or
-                                       ::SupportedClass
-                                       ::Collection)
+                                       :hydra-class ::SupportedClass
+                                       :hydra-collection ::Collection)
                                       :gen-max 2))
+
+;; entrypoint path for this API
+(s/def ::entrypoint ::absolute-path)
+;; URI of the class for the entrypoint resource
+(s/def ::entrypoint-class ::term)
+;; api documentation specific props
+(s/def ::api-props (s/keys :req [::entrypoint ::entrypoint-class]))
 
 (s/def ::ApiDocumentation
   (s/keys :req-un [::term
                    ::common-props
+                   ::api-props
                    ::supported-classes]))
 
-(s/def ::api-args (s/keys :req [::supported-classes]
+(s/def ::api-args (s/keys :req [::supported-classes
+                                ::entrypoint
+                                ::entrypoint-class]
                           :un [::type
                                ::title
                                ::description
@@ -480,12 +509,15 @@
 
 (defrecord ApiDocumentation [term
                              common-props
+                             api-props
                              supported-classes])
 
 ;; ApiDocumentations can be serialised as JSON-LD objects
 (extend-protocol JSONLDSerialisable levanzo.hydra.ApiDocumentation
                  (->jsonld [this]
                    (let [jsonld {"@type" "hydra:ApiDocumentation"
+                                 "hydra:entrypoint" (-> this :api-props ::entrypoint)
+                                 "lvz:entrypointClass" (-> this :api-props ::entrypoint-class)
                                  "hydra:supportedClass" (mapv ->jsonld (-> this :supported-classes))}]
                      (->> jsonld
                           (generic->jsonld (:common-props this))))))
@@ -500,6 +532,8 @@
 (defn api
   "Defines a Hydra ApiDocumentation element"
   [{:keys [:levanzo.hydra/supported-classes
+           :levanzo.hydra/entrypoint
+           :levanzo.hydra/entrypoint-class
            :levanzo.hydra/type
            :levanzo.hydra/title
            :levanzo.hydra/description
@@ -509,4 +543,6 @@
                                    ::title title
                                    ::description description
                                    ::type type})
+                      {::entrypoint entrypoint
+                       ::entrypoint-class entrypoint-class}
                       supported-classes))

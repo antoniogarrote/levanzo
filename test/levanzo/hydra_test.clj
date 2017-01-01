@@ -142,10 +142,18 @@
 
 (deftest api-documentation-jsonld-tests
   (let [jsonld (hydra/->jsonld (hydra/api {::hydra/id ":MyApi"
+                                           ::hydra/entrypoint "/entrypoint"
+                                           ::hydra/entrypoint-class (-> test-class
+                                                                        :common-props
+                                                                        ::hydra/id)
                                            ::hydra/title "My Api"
                                            ::hydra/description "Test API"
                                            ::hydra/supported-classes [test-class]}))]
     (is (= ":MyApi" (get jsonld "@id")))
+    (is (= "/entrypoint" (get jsonld "hydra:entrypoint")))
+    (is (= (-> test-class :common-props ::hydra/id)
+           (get jsonld "lvz:entrypointClass")))
+    (is (some? (get jsonld "lvz:entrypointClass")))
     (is (= "My Api" (get jsonld "hydra:title")))
     (is (= "Test API" (get jsonld "hydra:description")))
     (is (= "hydra:ApiDocumentation" (get jsonld "@type")))

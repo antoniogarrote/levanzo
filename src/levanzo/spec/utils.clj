@@ -2,7 +2,7 @@
   (:require [clojure.test :refer :all]
             [clojure.spec.test :as stest]))
 
-(def num-tests 5)
+(def num-tests (Integer/parseInt (or (System/getenv "NUM_TESTS") "5")))
 
 (defn is-checked-syms
   "Checks all public symbols in the library"

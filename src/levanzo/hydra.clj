@@ -1,5 +1,6 @@
 (ns levanzo.hydra
   (:require [clojure.spec :as s]
+            [clojure.spec.gen :as gen]
             [clojure.test.check.generators :as tg]
             [clojure.string :as string]
             [levanzo.utils :refer [clean-nils]]
@@ -422,11 +423,11 @@
                    ::member-class
                    ::operations]))
 
-(s/def ::collection-args (s/keys :req [::operations
+(s/def ::collection-args (s/keys :req [::id
+                                       ::operations
                                        ::is-paginated
                                        ::member-class]
-                                 :un [::id
-                                      ::type
+                                 :un [::type
                                       ::title
                                       ::description]))
 
@@ -484,6 +485,7 @@
 (s/def ::supported-classes (s/coll-of (s/or
                                        :hydra-class ::SupportedClass
                                        :hydra-collection ::Collection)
+                                      :min-count 1
                                       :gen-max 2))
 
 ;; entrypoint path for this API
@@ -499,13 +501,22 @@
                    ::api-props
                    ::supported-classes]))
 
-(s/def ::api-args (s/keys :req [::supported-classes
-                                ::entrypoint
-                                ::entrypoint-class]
-                          :un [::type
-                               ::title
-                               ::description
-                               ::id]))
+(s/def ::api-args (s/with-gen (s/keys :req [::supported-classes
+                                            ::entrypoint
+                                            ::entrypoint-class]
+                                      :un [::type
+                                           ::title
+                                           ::description
+                                           ::id])
+                    #(tg/fmap (fn [classes]
+                                {::supported-classes classes
+                                 ::entrypoint (first (gen/sample (s/gen ::entrypoint)))
+                                 ::entrypoint-class (-> classes first :common-props ::id)
+                                 ::type (first (gen/sample (s/gen ::type)))
+                                 ::title (first (gen/sample (s/gen ::title)))
+                                 ::description (first (gen/sample (s/gen ::description)))
+                                 ::id (first (gen/sample (s/gen ::id)))})
+                              (s/gen ::supported-classes))))
 
 (defrecord ApiDocumentation [term
                              common-props
@@ -528,7 +539,15 @@
               ::ApiDocumentation
               #(= (:term %) [:curie "hydra:ApiDocumentation"]))
         :fn (s/and
-             #(= (-> % :ret :supported-classes count) (-> % :args :api-args ::supported-classes count))))
+             ;; number of supported classes in built ApiDocumentation matches the number of classes
+             ;; passed in the arguments
+             #(= (-> % :ret :supported-classes count) (-> % :args :api-args ::supported-classes count))
+             ;; The URI for the entrypoint-class matches the URI of one of the supported-classes
+             #(not (empty?
+                    (filter (fn [[type supported-class-or-collection]]
+                              (= (-> supported-class-or-collection :common-props ::id)
+                                 (-> % :ret :api-props ::entrypoint-class)))
+                            (-> % :args :api-args ::supported-classes))))))
 (defn api
   "Defines a Hydra ApiDocumentation element"
   [{:keys [:levanzo.hydra/supported-classes

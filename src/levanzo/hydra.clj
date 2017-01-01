@@ -67,6 +67,12 @@
        (set-if-some (::title element) "hydra:title")
        (set-if-some (::description element) "hydra:description")))
 
+;; hydra routing options
+(s/def ::path-variable (s/with-gen keyword?
+                         #(s/gen #{:user_id :ticket_id :order_id :event_id})))
+(s/def ::route (s/coll-of (s/or :path ::path
+                                :path-variable ::path-variable)))
+
 ;; hydra:Operation properties
 
 ;; Handler function for a hydra:Operation
@@ -96,7 +102,7 @@
                                       ::returns]))
 
 
-;; An Hydra operation that can be associated tvo any hypermedia link
+;; An Hydra operation that can be associated two any hypermedia link
 (s/def ::Operation
   (s/keys :req-un [::term
                    ::common-props
@@ -206,7 +212,7 @@
 (s/def ::range ::term)
 ;; Hydra/RDF properties options, hydra:required, hydra:writeonly, hydra:readonly
 ;; id type title and description
-(s/def ::property-props (s/keys :opt [::required ::writeonly ::readonly ::domain ::range]))
+(s/def ::property-props (s/keys :opt [::required ::writeonly ::readonly ::domain ::range ::route]))
 ;; RDF property
 (s/def ::property ::term)
 ;; Is this supported property a link?
@@ -227,8 +233,7 @@
                    ::operations]))
 
 ;; Map of options used to create a supported property
-(s/def ::property-args (s/keys :req [::property
-                                     ::operations]
+(s/def ::property-args (s/keys :req [::property]
                                :opt [::id
                                      ::type
                                      ::title
@@ -237,7 +242,9 @@
                                      ::readonly
                                      ::writeonly
                                      ::domain
-                                     ::range]))
+                                     ::range
+                                     ::route
+                                     ::operations]))
 
 
 ;; A Hydra supported property
@@ -280,7 +287,9 @@
              #(= (-> % :ret :is-link) (-> % :args :is-link))
              #(= (-> % :ret :is-template) (-> % :args :is-template))
              #(= (-> % :ret :property) (-> % :args :property-args ::property))
-             #(= (-> % :ret :operations count) (-> % :args :property-args ::operations count))))
+             #(if (some? (-> % :args :property-args ::operations))
+                (= (-> % :ret :operations count) (-> % :args :property-args ::operations count))
+                (= (-> % :ret :operations count) 0))))
 (defn supported-property
   "Builds a Hydra SupportedProperty from a certain RDF property"
   [is-link is-template
@@ -294,7 +303,8 @@
            :levanzo.hydra/readonly
            :levanzo.hydra/writeonly
            :levanzo.hydra/domain
-           :levanzo.hydra/range]}]
+           :levanzo.hydra/range
+           :levanzo.hydra/route]}]
   (->SupportedProperty "hydra:SupportedProperty"
                        is-link
                        is-template
@@ -307,12 +317,27 @@
                                     ::readonly readonly
                                     ::writeonly writeonly
                                     ::domain domain
-                                    ::range range})
-                       operations))
+                                    ::range range
+                                    ::route route})
+                       (or operations [])))
+
+;; Map of options used to create a supported property link
+(s/def ::link-args (s/keys :req [::property
+                                 ::operations
+                                 ::route]
+                           :opt [::id
+                                 ::type
+                                 ::title
+                                 ::description
+                                 ::required
+                                 ::readonly
+                                 ::writeonly
+                                 ::domain
+                                 ::range]))
 
 
 (s/fdef link
-        :args (s/cat :property-args ::property-args)
+        :args (s/cat :link-args ::link-args)
         :ret (s/and
               ::SupportedProperty
               #(= (:is-link %) true)
@@ -325,7 +350,7 @@
 
 
 (s/fdef template-link
-        :args (s/cat :property-args ::property-args)
+        :args (s/cat :link-args ::link-args)
         :ret (s/and
               ::SupportedProperty
               #(= (:is-link %) false)

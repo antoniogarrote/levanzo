@@ -76,10 +76,10 @@
 ;; hydra:Operation properties
 
 ;; Handler function for a hydra:Operation
-(s/def ::handler (s/fspec :args (s/cat :args (s/map-of string? string?)
-                                       :body (s/nilable any?)
-                                       :request any?)
-                          :ret any?))
+(s/def ::handler (s/nilable (s/fspec :args (s/cat :args (s/map-of string? string?)
+                                                  :body (s/nilable any?)
+                                                  :request any?)
+                                     :ret any?)))
 ;; method "HTTP method for this operations"
 (s/def ::method (s/with-gen
                   string?
@@ -92,8 +92,8 @@
                                  :opt [::expects ::returns]))
 
 ;; Map of options used to create an operation
-(s/def ::operation-args (s/keys :req [::handler]
-                                :opt [::method
+(s/def ::operation-args (s/keys :req [::method]
+                                :opt [::handler
                                       ::id
                                       ::type
                                       ::title
@@ -147,9 +147,17 @@
                              ::returns returns})
                 handler)))
 
+(s/def ::method-operation-args (s/keys :opt [::handler
+                                             ::id
+                                             ::type
+                                             ::title
+                                             ::description
+                                             ::expects
+                                             ::returns]))
+
 
 (s/fdef get-operation
-        :args (s/cat :operation-args ::operation-args)
+        :args (s/cat :method-operation-args ::operation-args)
         :ret (s/and ::Operation
                     #(= (-> % :term) [:curie "hydra:Operation"])
                     #(= (-> % :operation-props ::method) "GET")))
@@ -159,7 +167,7 @@
 
 
 (s/fdef post-operation
-        :args (s/cat :operation-args ::operation-args)
+        :args (s/cat :method-operation-args ::operation-args)
         :ret (s/and ::Operation
                     #(= (-> % :term last) "hydra:Operation")
                     #(= (-> % :operation-props ::method) "POST")))
@@ -169,7 +177,7 @@
 
 
 (s/fdef put-operation
-        :args (s/cat :operation-args ::operation-args)
+        :args (s/cat :method-operation-args ::operation-args)
         :ret (s/and ::Operation
                     #(= (-> % :term) [:curie "hydra:Operation"])
                     #(= (-> % :operation-props ::method) "PUT")))
@@ -180,7 +188,7 @@
 
 
 (s/fdef patch-operation
-        :args (s/cat :operation-args ::operation-args)
+        :args (s/cat :method-operation-args ::operation-args)
         :ret (s/and ::Operation
                     #(= (-> % :term) [:curie "hydra:Operation"])
                     #(= (-> % :operation-props ::method) "PATCH")))
@@ -190,7 +198,7 @@
 
 
 (s/fdef delete-operation
-        :args (s/cat :operation-args ::operation-args)
+        :args (s/cat :method-operation-args ::operation-args)
         :ret (s/and ::Operation
                     #(= (-> % :term) [:curie "hydra:Operation"])
                     #(= (-> % :operation-props ::method) "DELETE")))
@@ -233,9 +241,9 @@
                    ::operations]))
 
 ;; Map of options used to create a supported property
-(s/def ::property-args (s/keys :req [::property]
-                               :opt [::id
-                                     ::type
+(s/def ::property-args (s/keys :req [::id
+                                     ::property]
+                               :opt [::type
                                      ::title
                                      ::description
                                      ::required

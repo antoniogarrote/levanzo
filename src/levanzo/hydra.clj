@@ -37,7 +37,7 @@
 
 (s/def ::absolute-path (s/with-gen
                          (s/and string?
-                                #(re-matches #"^\/([a-zA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+(\/?([a-zA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+)*$" %))
+                                #(re-matches #"^(\/|\/([a-zA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+(\/?([a-zA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+)*)$" %))
                          #(tg/fmap (fn [xs] (str "/" (string/join "/" xs)))
                                    (tg/vector tg/string-alphanumeric 1 5))))
 
@@ -232,13 +232,22 @@
 
 ;; A Hydra Link property
 (s/def ::SupportedProperty
-  (s/keys :req-un [::term
-                   ::is-link
-                   ::is-template
-                   ::property
-                   ::common-props
-                   ::property-props
-                   ::operations]))
+  (s/and (s/keys :req-un [::term
+                          ::is-link
+                          ::is-template
+                          ::property
+                          ::common-props
+                          ::property-props
+                          ::operations])
+         ;; links must have a route
+         #(if (or (:is-link %)
+                  (:is-template %))
+            (some? (-> % :property-props ::route))
+            true)
+         ;; no link/templates cannot have operations
+         #(if (not (or (:is-link %) (:is-template %)))
+            (empty? (:operations %))
+            true)))
 
 ;; Map of options used to create a supported property
 (s/def ::property-args (s/keys :req [::id
@@ -285,9 +294,19 @@
                           (generic->jsonld (:common-props this))))))
 
 (s/fdef supported-property
-        :args (s/cat :is-link ::is-link
-                     :is-template ::is-template
-                     :property-args ::property-args)
+        :args (s/and (s/cat :is-link ::is-link
+                            :is-template ::is-template
+                            :property-args ::property-args)
+                     ;; no link/templates cannot have operations
+                     (fn [{:keys [is-link is-template property-args]}]
+                       (if (not (or is-link is-template))
+                         (empty? (::operations property-args))
+                         true))
+                     ;; if properties, the count of properties passed in the args match the operations returned
+                     (fn [{:keys [is-link is-template property-args]}]
+                       (if (or is-link is-template)
+                         (some? (::route property-args))
+                         true)))
         :ret (s/and
               ::SupportedProperty
               #(= (:term %) [:curie "hydra:SupportedProperty"]))
@@ -448,18 +467,22 @@
 (s/def ::is-paginated boolean?)
 ;; Class of the collection members
 (s/def ::member-class ::term)
+;; Route for the collection resources
+(s/def ::member-route ::route)
 
 (s/def ::Collection
   (s/keys :req-un [::term
                    ::common-props
                    ::is-paginated
                    ::member-class
+                   ::member-route
                    ::operations]))
 
 (s/def ::collection-args (s/keys :req [::id
                                        ::operations
                                        ::is-paginated
-                                       ::member-class]
+                                       ::member-class
+                                       ::member-route]
                                  :un [::type
                                       ::title
                                       ::description]))
@@ -467,6 +490,7 @@
 (defrecord Collection [term
                        is-paginated
                        member-class
+                       member-route
                        common-props
                        operations])
 
@@ -489,12 +513,14 @@
               ::Collection
               #(= (:term %) [:curie "hydra:Collection"])
               #(not (nil? (-> % :member-class)))
+              #(not (nil? (-> % :member-route)))
               #(not (nil? (-> % :is-paginated))))
         :fn (s/and
              #(= (-> % :ret :operations count) (-> % :args :collection-args ::operations count))))
 
 (defn collection [{:keys [:levanzo.hydra/is-paginated
                           :levanzo.hydra/member-class
+                          :levanzo.hydra/member-route
                           :levanzo.hydra/operations
                           :levanzo.hydra/id
                           :levanzo.hydra/type
@@ -503,13 +529,19 @@
   (->Collection "hydra:Collection"
                 is-paginated
                 member-class
+                member-route
                 (clean-nils {::id id
                              ::title title
                              ::description description
                              ::type type})
                 operations))
 
-
+(defn collection?
+  "Is this model element a hydra:Collection?"
+  [element]
+  (and (map? element)
+       (= (:term element)
+          "hydra:Collection")))
 
 
 ;; Hydra ApiDocumentation
@@ -598,3 +630,20 @@
                       {::entrypoint entrypoint
                        ::entrypoint-class entrypoint-class}
                       supported-classes))
+
+(defn find-class
+  "Finds a class in the API by ID"
+  [api class-id]
+  (->> api
+       :supported-classes
+       (filter (fn [supported-class]
+                 (= (-> supported-class :common-props ::id)
+                    class-id)))
+       first))
+
+
+(defn find-class-operations
+  "Finds a class in the API by ID"
+  [api class-id]
+  (let [class (find-class api class-id)]
+    (-> class :operations)))

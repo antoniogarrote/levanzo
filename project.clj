@@ -5,4 +5,5 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :monkeypatch-clojure-test false
   :dependencies [[org.clojure/clojure "1.9.0-alpha14"]
+                 [bidi "2.0.16"]
                  [org.clojure/test.check "0.9.0" :scope "test"]])

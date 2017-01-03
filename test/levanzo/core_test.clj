@@ -4,4 +4,4 @@
             [levanzo.spec.utils :as spec-utils]))
 
 (deftest test-checkable-syms
-  (spec-utils/is-checked-syms))
+  (spec-utils/trace-is-checked-syms))

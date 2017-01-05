@@ -17,26 +17,21 @@
 (deftest check-range-test
   (spec-utils/check-symbol `schema/check-range))
 
-
 (deftest parse-supported-link-test
-  (let [iterations spec-utils/num-tests
-        apis (take iterations (gen/sample (s/gen ::hydra/ApiDocumentation)))
-        properties (take iterations (gen/sample (s/gen (s/and ::hydra/SupportedProperty
-                                                  #(:is-link %)))))
-        property-ids (map (fn [property] (-> property :property)) properties)
-        required-properties (map (fn [property] (-> property :property-props ::hydra/required)) properties)
-        predicates (map (fn [api property]
-                          (schema/parse-supported-link api property))
-                        apis
-                        properties)
-        results (map (fn [required predicate property-id]
-                       (and (or (not required)
-                                (schema/invalid? (predicate {})))
-                            (or (not required)
-                                (schema/invalid? (predicate {property-id []})))
-                            (schema/invalid? (predicate {property-id [{"@value" 1} {"@value" 2}]}))))
-                     required-properties
-                     predicates
-                     property-ids)]
-    (is (reduce (fn [acc result] (and acc result)) true results))
-    (spec-utils/check-symbol `schema/parse-supported-link)))
+  (spec-utils/check-symbol `schema/parse-supported-link))
+
+
+ (deftest parse-plain-property-test
+   (spec-utils/check-symbol `schema/parse-plain-property))
+
+(deftest parse-supported-property
+   (spec-utils/check-symbol `schema/parse-supported-property))
+
+
+(comment
+  (spec-utils/check-symbol `schema/parse-supported-property)
+
+  (gen/sample (tg/tuple (s/gen ::hydra/ApiDocumentation)
+                        (s/gen ::jsonld-spec/datatype)
+                        (s/gen ::jsonld-spec/jsonld-literal)) 1)
+  )

@@ -28,7 +28,8 @@
   (instance? ValidationError maybe-error))
 
 (defn xsd-uri? [t]
-  (string/starts-with? t (prefix-for-ns "xsd")))
+  (and (string? t)
+       (string/starts-with? t (prefix-for-ns "xsd"))))
 
 (s/fdef check-xsd-range
         :args (s/cat :range ::jsonld-spec/datatype
@@ -67,15 +68,11 @@
                                                 #(:is-link %)))
         :ret ::predicate
         :fn (s/and
-             any?
-             #(do (prn %)
-                  (prn "WTF!")
-                  true)
-             #(let [_ (println "HEY!!!")
-                    property (-> % :args :supported-property :common-props ::hydra/id)
-                    required(-> % :args :supported-property :property-props ::hydra/required)
+             #(let [property (-> % :args :supported-property :property)
+                    required (-> % :args :supported-property :property-props ::hydra/required)
                     predicate (-> % :ret)]
-                (and (invalid? (predicate {}))
+                (and (or (not required)
+                         (invalid? (predicate {})))
                      (or (not required)
                          (invalid? (predicate {property []})))
                      (invalid? (predicate {property [{"@value" 1} {"@value" 2}]}))))))
@@ -87,13 +84,12 @@
           is-optional (not (-> supported-property :property-props ::hydra/required))
           values (get jsonld property [])
           value (first values)]
-      ;(println "\n\n\n VALUES " (count values) " OPTIONAL? " is-optional)
       (cond
-        (= 0 (count values))    (if is-optional
-                                  nil
-                                  (->ValidationError :link-property-error
-                                                     supported-property
-                                                     (str "Missing mandatory property " property)))
+        (= 0 (count values)) (if is-optional
+                               nil
+                               (->ValidationError :link-property-error
+                                                  supported-property
+                                                  (str "Missing mandatory property " property)))
         (> 1 (count values)) (->ValidationError :link-property-error
                                                 supported-property
                                                 (str "Cardinality error, more than one link value for property " property))
@@ -109,36 +105,51 @@
                      :supported-property (s/and ::hydra/SupportedProperty
                                                 #(and (not (:is-link %))
                                                       (not (:is-template %)))))
-        :ret ::predicate)
+        :ret ::predicate
+        :fn (s/and
+             #(let [property  (-> % :args :supported-property :property)
+                    required  (-> % :args :supported-property :property-props ::hydra/required)
+                    predicate (-> % :ret)]
+                (and (or (not required)
+                         (invalid? (predicate {})))
+                     (or (not required)
+                         (invalid? (predicate {property []})))
+                     (invalid? (predicate {property [{"@value" 1} {"@value" 2}]})))
+                true)))
 (defn parse-plain-property
   "Creates a specification for a hydra property"
   [api supported-property]
   (fn [jsonld]
     (let [property (-> supported-property :property)
-          range (-> supported-property :common-props ::hydra/range)
+          range (-> supported-property :property-props ::hydra/range)
           is-optional (-> supported-property :property-props ::hydra/required)
           values (get jsonld property)
           value (first values)]
       (cond
-        (= 0 (count values))    (if is-optional
-                                  true
-                                  (throw (Exception. (str "Missing mandatory property " property))))
-        (not= 1 (count values)) (throw (Exception. (str "Cardinality error, more than one link value for property " property)))
-        :else                   (if (check-range api range value)
-                                  true
-                                  (throw (Exception. (str "Not string value for link (" value ") for property " property))))))))
+        (= 0 (count values))  (if is-optional
+                                nil
+                                (->ValidationError :property-error supported-property (str "Missing mandatory property " property)))
+        (> 1 (count values))  (->ValidationError :property-error supported-property (str "Cardinality error, more than one link value for property " property))
+        :else                   (try
+                                  (if (check-range api range value)
+                                    nil
+                                    (->ValidationError :property-error supported-property (str "Not string value for link (" value ") for property " property)))
+                                  (catch Exception ex
+                                    (->ValidationError :property-error supported-property (.getMessage ex))))))))
 
-(s/fdef parse-supported-link
+(s/fdef parse-supported-property
         :args (s/cat :api ::hydra/ApiDocumentation
-                     :supported-property ::hydra/SupportedProperty)
+                     :supported-property (s/and ::hydra/SupportedProperty
+                                                #(not (:is-template %)) ;; @todo remove me when we have support for templates
+                                                ))
         :ret ::predicate)
 (defn parse-supported-property
   "Creates a specification for a hydra supported-property"
   [api supported-property]
   (cond
-    (:is-link supported-property) (parse-supported-link supported-property)
+    (:is-link supported-property) (parse-supported-link api supported-property)
     (:is-template supported-property) (throw (Exception. "Not supported yet"))
-    :else  (parse-plain-property supported-property)))
+    :else  (parse-plain-property api supported-property)))
 
 (s/fdef parse-supported-class
         :args (s/cat :api ::hydra/ApiDocumentation

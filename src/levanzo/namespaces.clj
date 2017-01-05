@@ -27,3 +27,6 @@
 
 (defn default-ns [prefix]
   (register "" prefix))
+
+(defn prefix-for-ns [ns]
+  (get @ns-register ns))

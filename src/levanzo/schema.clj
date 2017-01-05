@@ -1,22 +1,34 @@
 (ns levanzo.schema
   (:require [levanzo.hydra :as hydra]
             [levanzo.spec.jsonld :as jsonld-spec]
+            [levanzo.namespaces :refer [xsd prefix-for-ns]]
             [clojure.spec :as s]
             [clojure.string :as string]
             [clojure.spec.test :as stest]
             [clojure.spec.gen :as gen]
             [clojure.test.check.generators :as tg]))
 
+(s/def ::error-type keyword?)
+(s/def ::error-cause any?)
+(s/def ::error-message string?)
+(s/def ::ValidationError (s/keys :req-un [::error-type ::error-cause ::error-message]))
+(defrecord ValidationError [error-type error-cause error-message])
+
 (s/def ::predicate (s/fspec :args (s/cat :jsonld ::jsonld-spec/expanded-jsonld)
-                            :ret boolean?))
+                            :ret (s/nilable ::ValidationError)))
 
-(def xsd-ns "http://www.w3.org/2001/XMLSchema#")
 
-(defn xsd [t]
-  (str xsd-ns t))
+(s/fdef invalid?
+        :args (s/cat :maybe-error (s/alt :non-error  any?
+                                         :validation-error ::ValidationError))
+        :ret boolean?)
+(defn invalid?
+  "Checks if the argument is a validation error"
+  [maybe-error]
+  (instance? ValidationError maybe-error))
 
 (defn xsd-uri? [t]
-  (string/starts-with? t xsd-ns))
+  (string/starts-with? t (prefix-for-ns "xsd")))
 
 (s/fdef check-xsd-range
         :args (s/cat :range ::jsonld-spec/datatype
@@ -31,9 +43,14 @@
     (throw (Exception. (str "Unknown/not implemented xsd validation for type " range)))))
 
 (s/fdef check-range
-        :args (s/cat :api ::hydra/ApiDocumentation
-                     :range ::jsonld-spec/uri
-                     :value ::jsonld-spec/uri)
+        :args (s/with-gen (s/cat :api ::hydra/ApiDocumentation
+                                 :range ::jsonld-spec/uri
+                                 :value (s/or
+                                         :nested ::jsonld-spec/expanded-jsonld
+                                         :literal ::jsonld-spec/jsonld-literal))
+                #(tg/tuple (s/gen ::hydra/ApiDocumentation)
+                           (s/gen ::jsonld-spec/datatype)
+                           (s/gen ::jsonld-spec/jsonld-literal)))
         :ret boolean?)
 (defn check-range [api range value]
   (if (xsd-uri? range)
@@ -48,24 +65,44 @@
         :args (s/cat :api ::hydra/ApiDocumentation
                      :supported-property (s/and ::hydra/SupportedProperty
                                                 #(:is-link %)))
-        :ret ::predicate)
+        :ret ::predicate
+        :fn (s/and
+             any?
+             #(do (prn %)
+                  (prn "WTF!")
+                  true)
+             #(let [_ (println "HEY!!!")
+                    property (-> % :args :supported-property :common-props ::hydra/id)
+                    required(-> % :args :supported-property :property-props ::hydra/required)
+                    predicate (-> % :ret)]
+                (and (invalid? (predicate {}))
+                     (or (not required)
+                         (invalid? (predicate {property []})))
+                     (invalid? (predicate {property [{"@value" 1} {"@value" 2}]}))))))
 (defn parse-supported-link
   "Creates a specification for a hydra link"
   [api supported-property]
   (fn [jsonld]
     (let [property (-> supported-property :property)
-          is-optional (-> supported-property :property-props ::hydra/required)
-          values (get jsonld property)
+          is-optional (not (-> supported-property :property-props ::hydra/required))
+          values (get jsonld property [])
           value (first values)]
+      ;(println "\n\n\n VALUES " (count values) " OPTIONAL? " is-optional)
       (cond
         (= 0 (count values))    (if is-optional
-                                  true
-                                  (throw (Exception. (str "Missing mandatory property " property))))
-        (not= 1 (count values)) (throw (Exception. (str "Cardinality error, more than one link value for property " property)))
+                                  nil
+                                  (->ValidationError :link-property-error
+                                                     supported-property
+                                                     (str "Missing mandatory property " property)))
+        (> 1 (count values)) (->ValidationError :link-property-error
+                                                supported-property
+                                                (str "Cardinality error, more than one link value for property " property))
         :else                   (if (and (some? (get value "@id"))
                                          (string? (get value "@id")))
-                                  true
-                                  (throw (Exception. (str "Not string value for link (" value ") for property " property))))))))
+                                  nil
+                                  (->ValidationError :link-property-error
+                                                     supported-property
+                                                     (str "Not string value for link (" value ") for property " property)))))))
 
 (s/fdef parse-plain-property
         :args (s/cat :api ::hydra/ApiDocumentation

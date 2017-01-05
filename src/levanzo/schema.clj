@@ -40,7 +40,7 @@
     (xsd "string") (string? (get value "@value"))
     (xsd "decimal") (int? (get value "@value"))
     (xsd "float")   (float? (get value "@value"))
-    (xsd "boolean") (boolean (get value "@value"))
+    (xsd "boolean") (boolean? (get value "@value"))
     (throw (Exception. (str "Unknown/not implemented xsd validation for type " range)))))
 
 (s/fdef check-range
@@ -122,7 +122,7 @@
   (fn [jsonld]
     (let [property (-> supported-property :property)
           range (-> supported-property :property-props ::hydra/range)
-          is-optional (-> supported-property :property-props ::hydra/required)
+          is-optional (not (-> supported-property :property-props ::hydra/required))
           values (get jsonld property)
           value (first values)]
       (cond
@@ -133,7 +133,7 @@
         :else                   (try
                                   (if (check-range api range value)
                                     nil
-                                    (->ValidationError :property-error supported-property (str "Not string value for link (" value ") for property " property)))
+                                    (->ValidationError :property-error supported-property (str "Not value (" value ") not in range (" range ") of property " property)))
                                   (catch Exception ex
                                     (->ValidationError :property-error supported-property (.getMessage ex))))))))
 
@@ -160,8 +160,15 @@
   [api api-class]
   (let [validations (map #(parse-supported-property api %) (-> api-class :supported-properties))]
     (fn [jsonld]
+      ;(prn jsonld)
       (and (map? jsonld)
-           (reduce (fn [acc v]
-                     (and acc (v jsonld))
-                     true
-                     validations))))))
+           (let [errors (->> validations
+                             (map (fn [validation]
+                                    ;(prn validation)
+                                    (validation jsonld)))
+                             (filter #(not (nil? %))))]
+             ;(prn "ERRORS?")
+             ;(prn errors)
+             (if (empty? errors)
+               nil
+               (->ValidationError :invalid-payload errors (str "Errors (" (count errors) ") found during validation"))))))))

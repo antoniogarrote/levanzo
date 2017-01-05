@@ -1,16 +1,18 @@
 (ns levanzo.routing
   (:require [levanzo.hydra :as hydra]
+            [levanzo.namespaces :as lns]
+            [levanzo.spec.jsonld :as jsonld-spec]
             [clojure.string :as string]
             [clojure.spec :as s]))
 
 ;; root of the route path
-(s/def ::path (s/cat :base ::hydra/path
-                     :rest (s/* (s/or :var ::hydra/path-variable
-                                      :path ::hydra/path))))
+(s/def ::path (s/cat :base ::jsonld-spec/path
+                     :rest (s/* (s/or :var ::jsonld-spec/path-variable
+                                      :path ::jsonld-spec/path))))
 
 ;; sequence of RDF properties leading to a resource
-(s/def ::property-path (s/coll-of (s/cat :class-term ::hydra/term
-                                         :property-term ::hydra/term)))
+(s/def ::property-path (s/coll-of (s/cat :class-term ::jsonld-spec/uri
+                                         :property-term ::jsonld-spec/uri)))
 
 (s/def ::route-link (s/nilable ::hydra/SupportedProperty))
 (s/def ::link-route (s/keys :req [::route-link ;; link the route is generated from
@@ -71,8 +73,8 @@
       nil)))
 
 (s/fdef property-cycle?
-        :args (s/cat :class-id ::hydra/term
-                     :property-id ::hydra/term
+        :args (s/cat :class-id ::jsonld-spec/uri
+                     :property-id ::jsonld-spec/uri
                      :property-path ::property-path)
         :ret boolean?)
 (defn property-cycle?
@@ -128,12 +130,12 @@
             (let [collection-routes (parse-class-routes route-link target-class context)
                   member-route (-> target-class :member-route)
                   path (concat-path path member-route)
-                  property-path (concat property-path [[member-class-id "hydra:member"]])
+                  property-path (concat property-path [[member-class-id (lns/resolve "hydra:member")]])
                   member-context {::path path
                                   ::property-path property-path
                                   ::hydra/ApiDocumentation ApiDocumentation}
-                  member-routes (parse-class-routes (hydra/link {::hydra/id "lvz:member-link"
-                                                                 ::hydra/property "hydra:member"
+                  member-routes (parse-class-routes (hydra/link {::hydra/id (lns/resolve "lvz:member-link")
+                                                                 ::hydra/property (lns/resolve "hydra:member")
                                                                  ::hydra/route member-route})
                                                     member-class
                                                     member-context)
@@ -182,7 +184,7 @@
 (s/fdef parse-link-routes
         :args (s/and
                ;; argument has to be a supported property
-               (s/cat :class-id ::hydra/term
+               (s/cat :class-id ::jsonld-spec/uri
                       :property ::hydra/SupportedProperty
                       :context  ::path)
                ;; it has to be a link or template

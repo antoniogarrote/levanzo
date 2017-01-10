@@ -3,7 +3,7 @@
             [levanzo.schema :as schema]
             [levanzo.hydra :as hydra]
             [levanzo.spec.jsonld :as jsonld-spec]
-            [levanzo.namespaces :refer [xsd]]
+            [levanzo.namespaces :refer [xsd resolve]]
             [levanzo.spec.utils :as spec-utils]
             [clojure.spec :as s]
             [clojure.spec.gen :as gen]
@@ -48,10 +48,12 @@
             (tg/return (-> class :supported-properties))
             (fn [properties]
               (let [generators (->> properties
-                                    (mapv (fn [{:keys [property-props property is-link]}]
+                                    (mapv (fn [{:keys [property-props property]}]
                                             (let [required (-> property-props ::hydra/required)
-                                                  range (-> property-props ::hydra/range)]
-                                              (tg/tuple (tg/return property)
+                                                  property-id (-> property :common-props ::hydra/id)
+                                                  is-link (-> property :is-link)
+                                                  range (-> property :rdf-props ::hydra/range)]
+                                              (tg/tuple (tg/return property-id)
                                                         (if required
                                                           (if is-link
                                                             (s/gen ::jsonld-spec/uri)
@@ -59,19 +61,34 @@
                                                               (make-xsd-type-gen range)
                                                               (let [class (hydra/find-class api range)]
                                                                 ;; Careful! this will explode with cyclic APIs
-                                                                (make-valid-payload-gen range api))))
+                                                                (do
+                                                                  (make-valid-payload-gen class api)))))
                                                           (tg/return nil)))))))]
                 (apply tg/tuple generators))))))
 
+(defn make-property-gen [type]
+  (tg/fmap (fn [uri]
+             (hydra/property {::hydra/id uri
+                              ::hydra/range type}))
+           (s/gen ::jsonld-spec/uri)))
+
 (defn make-literal-property-gen [type required]
-  (tg/fmap (fn [property]
-             (-> property
-                 (assoc :operations [])
-                 (assoc-in [:property-props ::hydra/required] required)
-                 (assoc-in [:property-props ::hydra/range] type)
-                 (assoc :is-link false)
-                 (assoc :is-template false)))
-           (s/gen ::hydra/SupportedProperty)))
+  (tg/fmap (fn [supported-property]
+             (let [property (:property supported-property)
+                   property (-> property
+                                (assoc-in [:rdf-props ::hydra/range] type))]
+               (-> supported-property
+                   (assoc :property property)
+                   (assoc-in [:property-props ::hydra/required] required))))
+           (s/gen (s/and ::hydra/SupportedProperty
+                         #(= (resolve "rdf:Property") (-> % :property :uri))))))
+
+;;(defn make-literal-property-gen [type required]
+;;  (tg/fmap (fn [supported-property]
+;;             (-> supported-property
+;;                 (assoc-in [:property-props ::hydra/required] required)))
+;;           (s/gen ::hydra/SupportedProperty
+;;                  {::hydra/property (make-property-gen type)})))
 
 
 (defn make-link-property-gen [target required]
@@ -82,11 +99,12 @@
                (-> property
                    (assoc :operations [operation])
                    (assoc-in [:property-props ::hydra/required] required)
-                   (assoc-in [:property-props ::hydra/range] target)
+                   (assoc-in [:property :rdf-props ::hydra/range] target)
                    (assoc :is-link true)
                    (assoc :is-template false))))
            (tg/tuple
-            (s/gen ::hydra/SupportedProperty)
+            (s/gen (s/and ::hydra/SupportedProperty
+                          #(= (resolve "hydra:Link") (-> % :property :uri))))
             (s/gen ::hydra/Operation))))
 
 
@@ -218,15 +236,11 @@
           (is valid))))))
 
 (deftest parse-supported-class-api-test
-  (println "Generating APIS...")
   (doseq [api (take-last 3 (gen/sample (make-api-tree-gen) 15))]
-    (println "API!")
     (s/valid? ::hydra/ApiDocumentation api)
     (let [validations-map (schema/build-api-validations api)]
       (doseq [klass (:supported-classes api)]
-        (println "CLASS!")
         (doseq [instance (gen/sample (make-valid-payload-gen klass api) 10)]
-          (println "INSTANCE...")
           (let [validation (get validations-map (-> klass :common-props ::hydra/id))
                 errors (validation validations-map instance)
                 valid (nil? errors)]
@@ -234,29 +248,3 @@
               (prn instance)
               (prn errors))
             (is valid)))))))
-
-(comment
-
-
-  (prn (last (take 50 (gen/sample (tg/such-that not-empty (tg/vector tg/int))))))
-  (prn (last (take 50 (gen/sample (make-api-tree-gen)))))
-  (def gapi (last (take 50 (gen/sample (make-api-tree-gen)))))
-
-  (clojure.pprint/pprint gapi)
-  (last (take 1000 (gen/sample (tg/recursive-gen gen/vector (tg/recursive-gen gen/vector tg/int)) 10000)))
-  (def klass (first (gen/sample (make-class-gen "http://test.com/Test" 15))))
-
-  (def instance (first (gen/sample (make-valid-payload-gen klass))))
-
-  ((schema/parse-supported-class {} klass) instance)
-
-  (doseq []
-    (prn ))
-
-
-  (spec-utils/check-symbol `schema/parse-supported-property)
-
-  (gen/sample (tg/tuple (s/gen ::hydra/ApiDocumentation)
-                        (s/gen ::jsonld-spec/datatype)
-                        (s/gen ::jsonld-spec/jsonld-literal)) 1)
-  )

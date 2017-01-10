@@ -27,7 +27,7 @@
 (s/def ::common-props (s/keys :opt [::id ::type ::title ::description]))
 
 (defn generic->jsonld
-  "Sets common RDF proeprties for all Hydra elements"
+  "Sets common RDF properties for all Hydra elements"
   [element jsonld]
   (->> jsonld
        (set-if-some (::id element) "@id")
@@ -49,7 +49,8 @@
                                      :ret any?)))
 ;; method "HTTP method for this operations"
 (s/def ::method (s/with-gen
-                  string?
+                  (s/and string?
+                         #(re-matches #"[A-Z]+" %))
                   #(s/gen #{"GET" "POST" "PUT" "PATCH" "DELETE" "OPTIONS" "HEAD"})))
 ;; hydra:expects URI of the data expected by a hydra:operation
 (s/def ::expects (s/nilable ::jsonld-spec/uri))
@@ -73,8 +74,8 @@
 (s/def ::Operation
   (s/keys :req-un [::jsonld-spec/uri
                    ::common-props
-                   ::operation-props
-                   ::handler]))
+                   ::operation-props]
+          :opt-un [::handler]))
 (defrecord Operation [uri
                       common-props
                       operation-props
@@ -104,15 +105,15 @@
             :levanzo.hydra/description
             :levanzo.hydra/expects
             :levanzo.hydra/returns] :as opts}]
-   (->Operation (resolve "hydra:Operation")
-                (clean-nils {::id id
-                             ::title title
-                             ::description description
-                             ::type type})
-                (clean-nils {::method (or method "GET")
-                             ::expects expects
-                             ::returns returns})
-                handler)))
+   (map->Operation (clean-nils {:uri (resolve "hydra:Operation")
+                                :common-props (clean-nils {::id id
+                                                           ::title title
+                                                           ::description description
+                                                           ::type type})
+                                :operation-props (clean-nils {::method (or method "GET")
+                                                              ::expects expects
+                                                              ::returns returns})
+                                :handler handler}))))
 
 
 (s/def ::method-operation-args (s/keys :opt [::handler
@@ -186,125 +187,241 @@
 (s/def ::domain ::jsonld-spec/uri)
 ;; Hydra range property
 (s/def ::range ::jsonld-spec/uri)
-;; Hydra/RDF properties options, hydra:required, hydra:writeonly, hydra:readonly
-;; id type title and description
-(s/def ::property-props (s/keys :opt [::required ::writeonly ::readonly ::domain ::range ::route]))
-;; RDF property
-(s/def ::property ::jsonld-spec/uri)
 ;; Is this supported property a link?
 (s/def ::is-link boolean?)
 ;; Is this supported property a template?
 (s/def ::is-template boolean?)
+
+
+(s/def ::rdf-props (s/keys ::domain ::range))
+
+(defrecord Property [uri
+                     is-link
+                     is-template
+                     common-props
+                     rdf-props])
+
+;; Properties can be serialised as JSON-LD objects
+(extend-protocol JSONLDSerialisable levanzo.hydra.Property
+                 (->jsonld [this]
+                   (let [rdf-type (cond (:is-link this) (resolve "hydra:Link")
+                                        (:is-template this) (resolve "hydra:TemplatedLink")
+                                        :else (resolve "rdf:Property"))]
+                     (->> {"@id" (-> this :common-props ::id)
+                           "@type" rdf-type}
+                          (set-if-some (-> this :rdf-props ::domain) (resolve "rdfs:domain"))
+                          (set-if-some (-> this :rdf-props ::range) (resolve "rdfs:range"))))))
+
+(s/def ::Property (s/with-gen
+                    (s/and (s/keys :req-un [::jsonld-spec/uri
+                                            ::is-link
+                                            ::is-template
+                                            ::common-props
+                                            ::rdf-props])
+                           ;; ID is mandatory
+                           #(some? (-> % :common-props ::id))
+                           ;; The URI is set correctly according to the kind of property
+                           #(cond
+                              (:is-link %)     (= (:uri %) (resolve "hydra:Link"))
+                              (:is-template %) (= (:uri %) (resolve "hydra:TemplatedLink"))
+                              :else            (= (:uri %) (resolve "rdf:Property"))))
+                    #(tg/fmap (fn [[id is-link is-template common-props rdf-props]]
+                                (let [common-props (assoc common-props ::id id)
+                                      uri (cond
+                                            is-link     (resolve "hydra:Link")
+                                            is-template (resolve "hydra:TemplatedLink")
+                                            :else       (resolve "rdf:Property"))]
+                                  (->Property uri is-link is-template common-props rdf-props)))
+                              (tg/tuple (s/gen ::jsonld-spec/uri)
+                                        tg/boolean
+                                        tg/boolean
+                                        (s/gen ::common-props)
+                                        (s/gen ::rdf-props)))))
+
+;; Map of options used to create a rdf property / hydra link / hydra template link
+(s/def ::property-args (s/keys :req [::id]
+                               :opt [::type
+                                     ::title
+                                     ::description
+                                     ::domain
+                                     ::range]))
+
+(s/fdef link
+        :args (s/cat :property-args ::property-args)
+        :ret (s/and
+              ::Property
+              #(some? (-> % :common-props ::id))
+              #(= (:is-link %) true)
+              #(= (:is-template %) false)
+              #(= (:uri %) (resolve "hydra:Link"))))
+(defn link
+  "Builds a Hydra link from a certain RDF property"
+  [{:keys [:levanzo.hydra/id
+           :levanzo.hydra/type
+           :levanzo.hydra/title
+           :levanzo.hydra/description
+           :levanzo.hydra/domain
+           :levanzo.hydra/range]}]
+  (->Property (resolve "hydra:Link")
+              true
+              false
+              (clean-nils {::id id
+                           ::title title
+                           ::description description
+                           ::type type})
+              (clean-nils {::domain domain
+                           ::range range})))
+
+
+(s/fdef templated-link
+        :args (s/cat :property-args ::property-args)
+        :ret (s/and
+              ::Property
+              #(some? (-> % :common-props ::id))
+              #(= (:is-link %) false)
+              #(= (:is-template %) true)
+              #(= (:uri %) (resolve "hydra:TemplatedLink"))))
+(defn templated-link
+  "Builds a Hydra link from a certain RDF property"
+  [{:keys [:levanzo.hydra/id
+           :levanzo.hydra/type
+           :levanzo.hydra/title
+           :levanzo.hydra/description
+           :levanzo.hydra/domain
+           :levanzo.hydra/range]}]
+  (->Property (resolve "hydra:TemplatedLink")
+              false
+              true
+              (clean-nils {::id id
+                           ::title title
+                           ::description description
+                           ::type type})
+              (clean-nils {::domain domain
+                           ::range range})))
+
+(s/fdef property
+        :args (s/cat :property-args ::property-args)
+        :ret (s/and
+              ::Property
+              #(some? (-> % :common-props ::id))
+              #(= (:is-link %) false)
+              #(= (:is-template %) false)
+              #(= (:uri %) (resolve "rdf:Property"))))
+(defn property
+  "Builds a Hydra link from a certain RDF property"
+  [{:keys [:levanzo.hydra/id
+           :levanzo.hydra/type
+           :levanzo.hydra/title
+           :levanzo.hydra/description
+           :levanzo.hydra/domain
+           :levanzo.hydra/range]}]
+  (->Property (resolve "rdf:Property")
+              false
+              false
+              (clean-nils {::id id
+                           ::title title
+                           ::description description
+                           ::type type})
+              (clean-nils {::domain domain
+                           ::range range})))
+
+
+;; Hydra/RDF properties options, hydra:required, hydra:writeonly, hydra:readonly
+;; id type title and description
+(s/def ::property-props (s/keys :opt [::required ::writeonly ::readonly  ::route]))
+;; RDF property
+(s/def ::property ::Property)
 ;; List of operations associated to a link/template
 (s/def ::operations (s/coll-of ::Operation :gen-max 2))
 
 ;; A Hydra Link property
 ;; A Hydra supported property
 (defrecord SupportedProperty [uri
-                              is-link
-                              is-template
                               property
                               common-props
                               property-props
                               operations])
 
 (s/def ::SupportedProperty
-  (s/with-gen (s/and (s/keys :req-un [::jsonld-spec/uri
-                                      ::is-link
-                                      ::is-template
-                                      ::property
+  (s/with-gen (s/and (s/keys :req-un [::property
                                       ::common-props
                                       ::property-props
                                       ::operations])
-                     ;; links must have a route
-                     #(if (or (:is-link %)
-                              (:is-template %))
-                        (some? (-> % :property-props ::route))
-                        true)
+                     #(= (resolve "hydra:SupportedProperty") (:uri %))
                      ;; no link/templates cannot have operations
-                     #(if (not (or (:is-link %) (:is-template %)))
+                     #(if (not (or (-> % :property :is-link) (-> % :property :is-template)))
                         (empty? (:operations %))
                         true))
-    #(tg/fmap (fn [[is-link is-template property common-props property-props operations]]
-                (if (or is-link
-                        is-template)
-                  (let [type (if is-link
-                               (resolve "hydra:Link")
-                               (resolve "hydra:TemplatedLink"))
-                        route (or (-> property-props ::route) ["/prop"])
+    #(tg/fmap (fn [[property common-props property-props operations]]
+                (if (or (:is-link property)
+                        (:is-template property))
+                  (let [route (or (-> property-props ::route) ["/prop"])
                         property-props (assoc property-props ::route route)]
-                    (->SupportedProperty type is-link is-template property common-props property-props operations))
-                  (->SupportedProperty (resolve "rdf:Property") is-link is-template property common-props property-props [])))
+                    (->SupportedProperty (resolve "hydra:SupportedProperty") property common-props property-props operations))
+                  (->SupportedProperty (resolve "hydra:SupportedProperty") property common-props property-props [])))
               (tg/tuple
-               tg/boolean
-               tg/boolean
-               (s/gen ::jsonld-spec/uri)
+               (s/gen ::Property)
                (s/gen ::common-props)
                (s/gen ::property-props)
                (s/gen (s/coll-of ::Operation :max-count 1 :min-count 1))))))
 
-;; Map of options used to create a supported property
-(s/def ::property-args (s/keys :req [::id
-                                     ::property]
-                               :opt [::type
-                                     ::title
-                                     ::description
-                                     ::required
-                                     ::readonly
-                                     ::writeonly
-                                     ::domain
-                                     ::range
-                                     ::route
-                                     ::operations]))
-
 ;; Operations can be serialised as JSON-LD objects
 (extend-protocol JSONLDSerialisable levanzo.hydra.SupportedProperty
                  (->jsonld [this]
-                   (let [rdf-type (cond (:is-link this) (resolve "hydra:Link")
-                                        (:is-template this) (resolve "hydra:TemplatedLink")
-                                        :else (resolve "rdf:Property"))
-                         rdf-property (->> {"@id" (:property this)
-                                            "@type" rdf-type}
-                                           (set-if-some (-> this :property-props ::domain) (resolve "rdfs:domain"))
-                                           (set-if-some (-> this :property-props ::range) (resolve "rdfs:range")))
-                         rdf-property (if-let [operations (:operations this)]
-                                        (assoc rdf-property (resolve "hydra:supportedOperation") (mapv ->jsonld operations))
-                                        rdf-property)]
-                     (->> {"@type" (resolve "hydra:SupportedProperty")
-                           (resolve "hydra:property") rdf-property}
-                          (set-if-some (-> this :property-props ::required) (resolve "hydra:required"))
-                          (set-if-some (-> this :property-props ::readonly) (resolve "hydra:readonly"))
-                          (set-if-some (-> this :property-props ::writeonly) (resolve "hydra:writeonly"))
-                          (generic->jsonld (:common-props this))))))
+                   (let [rdf-property (->jsonld (:property this))
+                         supported-property (->> {"@type" (resolve "hydra:SupportedProperty")
+                                                  (resolve "hydra:property") rdf-property}
+                                                 (set-if-some (-> this :property-props ::required) (resolve "hydra:required"))
+                                                 (set-if-some (-> this :property-props ::readonly) (resolve "hydra:readonly"))
+                                                 (set-if-some (-> this :property-props ::writeonly) (resolve "hydra:writeonly"))
+                                                 (generic->jsonld (:common-props this)))]
+                     (if-let [operations (:operations this)]
+                       (assoc supported-property (resolve "hydra:supportedOperation") (mapv ->jsonld operations))
+                       supported-property))))
+
+;; Map of options used to create a supported property
+(s/def ::supported-property-args (s/with-gen (s/keys :req [::property]
+                                                     :opt [::id
+                                                           ::type
+                                                           ::title
+                                                           ::description
+                                                           ::required
+                                                           ::readonly
+                                                           ::writeonly
+                                                           ::route
+                                                           ::operations])
+                                   #(tg/fmap (fn [[property id type title description required readonly writeonly route operations]]
+                                               (if (or (:is-link property)
+                                                       (:is-template property))
+                                                 {::property property ::id id ::type type ::title title ::description description
+                                                  ::required required ::readonly readonly ::writeonly writeonly ::route route ::operations operations}
+                                                 {::property property ::id id ::type type ::title title ::description description
+                                                  ::required required ::readonly readonly ::writeonly writeonly ::route route :operations []}))
+                                             (tg/tuple (s/gen ::property)
+                                                       (s/gen ::id)
+                                                       (s/gen ::type)
+                                                       (s/gen ::title)
+                                                       (s/gen ::description)
+                                                       (s/gen ::required)
+                                                       (s/gen ::readonly)
+                                                       (s/gen ::writeonly)
+                                                       (s/gen ::route)
+                                                       (s/gen ::operations)))))
 
 (s/fdef supported-property
-        :args (s/and (s/cat :is-link ::is-link
-                            :is-template ::is-template
-                            :property-args ::property-args)
+        :args (s/and (s/cat :supported-property-args ::supported-property-args
+                            )
                      ;; no link/templates cannot have operations
-                     (fn [{:keys [is-link is-template property-args]}]
-                       (if (not (or is-link is-template))
-                         (empty? (::operations property-args))
-                         true))
-                     ;; if properties, the count of properties passed in the args match the operations returned
-                     (fn [{:keys [is-link is-template property-args]}]
-                       (if (or is-link is-template)
-                         (some? (::route property-args))
+                     (fn [{:keys [property operations]}]
+                       (if (not (or (:is-link property) (:is-template property)))
+                         (empty? operations)
                          true)))
         :ret (s/and
               ::SupportedProperty
-              #(= (:uri %) (resolve "hydra:SupportedProperty")))
-        :fn (s/and
-             #(= (-> % :ret :is-link) (-> % :args :is-link))
-             #(= (-> % :ret :is-template) (-> % :args :is-template))
-             #(= (-> % :ret :property) (-> % :args :property-args ::property))
-             #(if (some? (-> % :args :property-args ::operations))
-                (= (-> % :ret :operations count) (-> % :args :property-args ::operations count))
-                (= (-> % :ret :operations count) 0))))
+              #(= (:uri %) (resolve "hydra:SupportedProperty"))))
 (defn supported-property
   "Builds a Hydra SupportedProperty from a certain RDF property"
-  [is-link is-template
-   {:keys [:levanzo.hydra/property
+  [{:keys [:levanzo.hydra/property
            :levanzo.hydra/operations
            :levanzo.hydra/id
            :levanzo.hydra/type
@@ -313,12 +430,8 @@
            :levanzo.hydra/required
            :levanzo.hydra/readonly
            :levanzo.hydra/writeonly
-           :levanzo.hydra/domain
-           :levanzo.hydra/range
            :levanzo.hydra/route]}]
   (->SupportedProperty (resolve "hydra:SupportedProperty")
-                       is-link
-                       is-template
                        property
                        (clean-nils {::id id
                                     ::type type
@@ -327,64 +440,8 @@
                        (clean-nils {::required required
                                     ::readonly readonly
                                     ::writeonly writeonly
-                                    ::domain domain
-                                    ::range range
                                     ::route route})
                        (or operations [])))
-
-;; Map of options used to create a supported property link
-(s/def ::link-args (s/keys :req [::property
-                                 ::operations
-                                 ::route]
-                           :opt [::id
-                                 ::type
-                                 ::title
-                                 ::description
-                                 ::required
-                                 ::readonly
-                                 ::writeonly
-                                 ::domain
-                                 ::range]))
-
-
-(s/fdef link
-        :args (s/cat :link-args ::link-args)
-        :ret (s/and
-              ::SupportedProperty
-              #(= (:is-link %) true)
-              #(= (:is-template %) false)
-              #(= (:uri %) (resolve "hydra:SupportedProperty"))))
-(defn link
-  "Builds a Hydra link from a certain RDF property"
-  [args]
-  (supported-property true false args))
-
-
-(s/fdef template-link
-        :args (s/cat :link-args ::link-args)
-        :ret (s/and
-              ::SupportedProperty
-              #(= (:is-link %) false)
-              #(= (:is-template %) true)
-              #(= (:uri %) (resolve "hydra:SupportedProperty"))))
-(defn template-link
-  "Builds a Hydra templated link from a certain RDF property"
-  [args]
-  (supported-property false true args))
-
-
-(s/fdef property
-        :args (s/cat :property-args ::property-args)
-        :ret (s/and
-              ::SupportedProperty
-              #(= (:is-link %) false)
-              #(= (:is-template %) false)
-              #(= (:uri %) (resolve "hydra:SupportedProperty"))
-              #(empty? (:operations %))))
-(defn property
-  "Builds a Hydra property from a certain RDF property"
-  [args]
-  (supported-property false false (assoc args ::operations [])))
 
 
 ;; Hydra Class
@@ -402,9 +459,9 @@
 (s/def ::class-args (s/keys :req [::id
                                   ::operations
                                   ::supported-properties]
-                            :un [::type
-                                 ::title
-                                 ::description]))
+                            :opt [::type
+                                  ::title
+                                  ::description]))
 
 (defrecord SupportedClass [uri
                            common-props
@@ -426,11 +483,10 @@
         :ret (s/and
               ::SupportedClass
               #(= (:uri %) (resolve "hydra:Class"))
-              #(not (nil? (-> % :common-props ::id))))
+               #(not (nil? (-> % :common-props ::id))))
         :fn (s/and
              #(= (-> % :ret :operations count) (-> % :args :class-args ::operations count))
              #(= (-> % :ret :supported-properties count) (-> % :args :class-args ::supported-properties count))))
-
 (defn class [{:keys [:levanzo.hydra/id
                      :levanzo.hydra/operations
                      :levanzo.hydra/supported-properties

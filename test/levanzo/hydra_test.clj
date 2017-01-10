@@ -30,22 +30,29 @@
   ([] (operation-jsonld "GET"))
   ([method] (operation-jsonld method nil nil)))
 
+(deftest method-test
+  (let [methods ["GET" "POST" "PUT" "PATCH" "DELETE" "OPTIONS" "HEAD" "OTHER"]
+        invalid ["get" "post" "G3T"]]
+    (doseq [method methods]
+      (is (s/valid? ::hydra/method method)))
+    (doseq [method invalid]
+      (is (not (s/valid? ::hydra/method method))))))
+
 (deftest operation-test
-  (let [op (hydra/->Operation "http://www.w3.org/ns/hydra/core#Operation"
-                              {}
-                              {::hydra/method "GET"
-                               ::hydra/expects "http://test.com#expects"
-                               ::hydra/returns "http://test.com#returns"}
-                              (fn [args body request]
-                                "operation handler"))]
+  (let [op (hydra/map->Operation {:uri "http://www.w3.org/ns/hydra/core#Operation"
+                                  :common-props {}
+                                  :operation-props {::hydra/method "GET"
+                                                    ::hydra/expects "http://test.com#expects"
+                                                    ::hydra/returns "http://test.com#returns"}})]
     (is (s/valid? ::hydra/Operation op))
     (is (= "GET" (-> op :operation-props ::hydra/method)))
     (is (= "http://www.w3.org/ns/hydra/core#Operation" (:uri op)))
-    (is (= "operation handler" ((:handler op) nil nil nil)))
     (is (= "http://test.com#expects" (-> op :operation-props ::hydra/expects)))
     (is (= "http://test.com#returns" (-> op :operation-props ::hydra/returns)))
     (is (= (operation-jsonld "GET" "http://test.com#expects" "http://test.com#returns")
-           (hydra/->jsonld op)))))
+           (hydra/->jsonld op)))
+    (is (s/valid? ::hydra/Operation (assoc op
+                                           :handler (fn [a b r] nil))))))
 
 (deftest operation-helper-tests
   (let [null-handler (fn [_ _ _] true)
@@ -63,22 +70,28 @@
 
 (deftest property-jsonld-tests
   (let [null-operation (hydra/get-operation {::hydra/handler (fn [_ _ _] true)})
+        prop (hydra/property  {::hydra/id "http://test.com#prop"
+                               ::hydra/domain "http://test.com#Domain"
+                               ::hydra/range "http://test.com#Range"})
+        link (hydra/link {::hydra/id "http://test.com#link"
+                          ::hydra/domain "http://test.com#Domain"
+                          ::hydra/range "http://test.com#Range"})
+        template (hydra/templated-link {::hydra/id "http://test.com#template"
+                                        ::hydra/domain "http://test.com#Domain"
+                                        ::hydra/range "http://test.com#Range"})
         options {::hydra/readonly true
                  ::hydra/writeonly false
                  ::hydra/required true
-                 ::hydra/domain "http://test.com#Domain"
-                 ::hydra/range "http://test.com#Range"
                  ::hydra/operations [null-operation]}
+        supported-property (hydra/->jsonld (hydra/supported-property (-> options (assoc ::hydra/property prop) (assoc ::hydra/operations []))))
+        supported-link (hydra/->jsonld (hydra/supported-property (assoc options ::hydra/property link)))
+        supported-template (hydra/->jsonld (hydra/supported-property (assoc options ::hydra/property template)))]
 
-        prop (hydra/->jsonld (hydra/property (assoc options ::hydra/property "http://test.com#prop")))
-        link (hydra/->jsonld (hydra/link (assoc options ::hydra/property "http://test.com#link")))
-        template (hydra/->jsonld (hydra/template-link (assoc options ::hydra/property "http://test.com#template")))]
+    (is (= "http://www.w3.org/ns/hydra/core#Link" (-> supported-link (get "http://www.w3.org/ns/hydra/core#property") (get "@type"))))
+    (is (= "http://www.w3.org/ns/hydra/core#TemplatedLink" (-> supported-template (get "http://www.w3.org/ns/hydra/core#property") (get "@type"))))
+    (is (= "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property" (-> supported-property (get "http://www.w3.org/ns/hydra/core#property") (get "@type"))))
 
-    (is (= "http://www.w3.org/ns/hydra/core#Link" (-> link (get "http://www.w3.org/ns/hydra/core#property") (get "@type"))))
-    (is (= "http://www.w3.org/ns/hydra/core#TemplatedLink" (-> template (get "http://www.w3.org/ns/hydra/core#property") (get "@type"))))
-    (is (= "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property" (-> prop (get "http://www.w3.org/ns/hydra/core#property") (get "@type"))))
-
-    (doseq [supported [prop link template]]
+    (doseq [supported [supported-property supported-link supported-template]]
       (is (= true (-> supported (get "http://www.w3.org/ns/hydra/core#required"))))
       (is (= true (-> supported (get "http://www.w3.org/ns/hydra/core#readonly"))))
       (is (= false (-> supported (get "http://www.w3.org/ns/hydra/core#writeonly"))))
@@ -90,11 +103,11 @@
                               ::hydra/description "Test class"
                               ::hydra/operations [(hydra/delete-operation {::hydra/title "Destroys a MyClass instance"
                                                                            ::hydra/handler (fn [_ _ _] "Destroyed")})]
-                              ::hydra/supported-properties [(hydra/property {::hydra/property "http://xmlns.com/foaf/0.1/name"
-                                                                             ::hydra/required true
-                                                                             ::hydra/range "http://www.w3.org/2001/XMLSchema#string"})
-                                                            (hydra/property {::hydra/property "http://xmlns.com/foaf/0.1/age"
-                                                                             ::hydra/range "http://www.w3.org/2001/XMLSchema#decimal"})]}))
+                              ::hydra/supported-properties [(hydra/supported-property {::hydra/property (hydra/property {::hydra/id "http://xmlns.com/foaf/0.1/name"
+                                                                                                                         ::hydra/range "http://www.w3.org/2001/XMLSchema#string"})
+                                                                                       ::hydra/required true})
+                                                            (hydra/supported-property {::hydra/property (hydra/property  {::hydra/id "http://xmlns.com/foaf/0.1/age"
+                                                                                                                          ::hydra/range "http://www.w3.org/2001/XMLSchema#decimal"})})]}))
 (deftest class-jsonld-tests
   (is (= {"@id" "http://test.com#MyClass"
           "@type" "http://www.w3.org/ns/hydra/core#Class"
@@ -105,15 +118,15 @@
             "http://www.w3.org/ns/hydra/core#property"
             {"@id" "http://xmlns.com/foaf/0.1/name"
              "@type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-             "http://www.w3.org/2000/01/rdf-schema#range" "http://www.w3.org/2001/XMLSchema#string"
-             "http://www.w3.org/ns/hydra/core#supportedOperation" []}
+             "http://www.w3.org/2000/01/rdf-schema#range" "http://www.w3.org/2001/XMLSchema#string"}
+            "http://www.w3.org/ns/hydra/core#supportedOperation" []
             "http://www.w3.org/ns/hydra/core#required" true}
            {"@type" "http://www.w3.org/ns/hydra/core#SupportedProperty"
             "http://www.w3.org/ns/hydra/core#property"
             {"@id" "http://xmlns.com/foaf/0.1/age"
              "@type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-             "http://www.w3.org/2000/01/rdf-schema#range" "http://www.w3.org/2001/XMLSchema#decimal"
-             "http://www.w3.org/ns/hydra/core#supportedOperation" []}}]
+             "http://www.w3.org/2000/01/rdf-schema#range" "http://www.w3.org/2001/XMLSchema#decimal"}
+            "http://www.w3.org/ns/hydra/core#supportedOperation" []}]
           "http://www.w3.org/ns/hydra/core#supportedOperation"
           [{"@type" "http://www.w3.org/ns/hydra/core#Operation"
             "http://www.w3.org/ns/hydra/core#method" "DELETE"

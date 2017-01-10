@@ -63,7 +63,7 @@
                           (tg/return {:get (fn [r h b] b)})
                           (tg/return [])))))
 
-(def routes-register (atom {}))
+(def ^:dynamic *routes-register* (atom {}))
 
 (defn model-or-uri [model]
   (if (string? model)
@@ -74,7 +74,7 @@
   (mapv (fn [route]
           (let [{:keys [path model nested]} route
                 model (model-or-uri model)]
-            (swap! routes-register (fn [acc] (assoc acc model route)))
+            (swap! *routes-register* (fn [acc] (assoc acc model route)))
             (if (or (nil? nested) (empty? nested))
               (let [leafed (leaf path model)]
                 leafed)
@@ -96,3 +96,21 @@
   [routes]
   (s/assert ::route-input routes)
   (first (process-routes* [routes])))
+
+
+(s/fdef link-for
+        :args (s/cat :routes ::bidi-branch-route
+                     :model ::hydra/id
+                     :link-args (s/coll-of (s/or :keys keyword?
+                                                 :val any?)))
+        :ret (s/or :id ::hydra/id
+                   :path ::jsonld-spec/path))
+(defn link-for
+  "Mints a link for a provided set of routes, model URI and args "
+  [routes model & args]
+  (let [args (concat [routes (keyword model)] args)]
+    (if (some? (get @*routes-register* (keyword model)))
+      (try (apply bidi/path-for args)
+           (catch Exception ex
+             (throw (Exception. (str "Error generating link for " model) ex))))
+      (throw (throw (Exception. (str "Unknown model URI " model)))))))

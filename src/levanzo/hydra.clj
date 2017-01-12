@@ -43,10 +43,14 @@
 ;; hydra:Operation properties
 
 ;; Handler function for a hydra:Operation
-(s/def ::handler (s/nilable (s/fspec :args (s/cat :args (s/map-of string? string?)
-                                                  :body (s/nilable any?)
-                                                  :request any?)
-                                     :ret any?)))
+;; (s/def ::handler (s/with-gen (s/nilable (s/fspec :args (s/cat :args (s/map-of keyword? string?)
+;;                                                               :body (s/nilable any?)
+;;                                                               :request any?)
+;;                                                  :ret any?))
+;;                    #(tg/return (fn [_ _ _] {}))))
+(s/def ::handler (s/with-gen (s/nilable fn?)
+                   #(tg/return (fn [_ _ _] {}))))
+
 ;; method "HTTP method for this operations"
 (s/def ::method (s/with-gen
                   (s/and string?

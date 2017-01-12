@@ -9,7 +9,7 @@
 (lns/register "test" "http://test.com#")
 
 (deftest handler-test
- (let [handler (fn [args body request] {})]
+  (let [handler (fn [args body request] {})]
     (is (s/valid? ::hydra/handler handler))))
 
 (deftest generic->jsonld-test

@@ -64,6 +64,7 @@
                           (tg/return [])))))
 
 (def ^:dynamic *routes-register* (atom {}))
+(def ^:dynamic *routes* (atom []))
 
 (defn model-or-uri [model]
   (if (string? model)
@@ -95,22 +96,29 @@
   "Process the routes for an API populating the routes register and building a new set of bidi routes"
   [routes]
   (s/assert ::route-input routes)
-  (first (process-routes* [routes])))
+  (let [routes (first (process-routes* [routes]))]
+    (reset! *routes* routes)))
 
 
 (s/fdef link-for
-        :args (s/cat :routes ::bidi-branch-route
-                     :model ::hydra/id
+        :args (s/cat :model ::hydra/id
                      :link-args (s/coll-of (s/or :keys keyword?
                                                  :val any?)))
         :ret (s/or :id ::hydra/id
                    :path ::jsonld-spec/path))
 (defn link-for
   "Mints a link for a provided set of routes, model URI and args "
-  [routes model & args]
-  (let [args (concat [routes (keyword model)] args)]
-    (if (some? (get @*routes-register* (keyword model)))
+  [model & args]
+  (let [args (concat [@*routes* (keyword (model-or-uri model))] args)]
+    (if (some? (get @*routes-register* (keyword (model-or-uri model))))
       (try (apply bidi/path-for args)
            (catch Exception ex
-             (throw (Exception. (str "Error generating link for " model) ex))))
-      (throw (throw (Exception. (str "Unknown model URI " model)))))))
+             (throw (Exception. (str "Error generating link for " (model-or-uri model)) ex))))
+      (throw (throw (Exception. (str "Unknown model URI " (model-or-uri model))))))))
+
+
+(defn clear!
+  "Cleans the routes information"
+  []
+  (reset! *routes-register* {})
+  (reset! *routes* []))

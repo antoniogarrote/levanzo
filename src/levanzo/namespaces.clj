@@ -23,10 +23,13 @@
   (let [[p s] (string/split curie #"\:")]
     (if (some? (get @ns-register p))
       (str (get @ns-register p) s)
-      (throw (Exception. (str "Impossible to resolve curie " curie))))))
+      curie)))
 
 (defn default-ns [prefix]
   (register "" prefix))
 
 (defn prefix-for-ns [ns]
   (get @ns-register ns))
+
+(defn default-ns? []
+  (some? (get @ns-register "")))

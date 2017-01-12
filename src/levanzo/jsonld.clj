@@ -1,6 +1,7 @@
 (ns levanzo.jsonld
   (:require [clojure.spec :as s]
-            [clojure.test.check.generators :as tg]))
+            [clojure.test.check.generators :as tg])
+  (:import [com.github.jsonldjava.core JsonLdProcessor JsonLdOptions DocumentLoader]))
 
 ;; list without duplicates
 (s/def ::list-no-dups (s/with-gen
@@ -62,3 +63,31 @@
   (if (some? source)
     (assoc jsonld target source)
     jsonld))
+
+
+(defn java->clj
+  "Transforms a data structure made of Java objects into native
+   Clojure data structures"
+  [obj]
+  (cond
+    (instance? java.util.Map obj) (->> obj
+                                       (map (fn [[k v]] [k (java->clj v)]))
+                                       (into {}))
+    (instance? java.util.List obj) (->> obj
+                                        (map #(java->clj %))
+                                        (into []))
+    :else obj))
+
+(defn expand-json-ld
+  ([json-ld]
+   (java->clj (JsonLdProcessor/expand json-ld))))
+
+
+(defn flatten-json-ld
+  ([json-ld context]
+   (java->clj (JsonLdProcessor/flatten json-ld context (JsonLdOptions.))))
+  ([json-ld]
+   (flatten-json-ld json-ld nil)))
+
+(defn compact-json-ld [json-ld context]
+  (java->clj (JsonLdProcessor/compact json-ld context (JsonLdOptions.))))

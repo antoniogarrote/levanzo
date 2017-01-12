@@ -45,12 +45,16 @@
 (s/def ::path-variable (s/with-gen keyword?
                          #(s/gen #{:user_id :ticket_id :order_id :event_id})))
 
-(def url-validator (UrlValidator.))
+(def url-validator (UrlValidator. UrlValidator/ALLOW_LOCAL_URLS))
+
 (s/def ::uri (s/with-gen (s/and string?
-                                #(.isValid url-validator %)
+                                #(or
+                                  (.isValid url-validator %)
+                                  (.isValid url-validator (string/replace-first (str "http://localhost/" %) "http://localhost//" "http://localhost/")))
                                 #(re-matches #"^([a-zA-Z0-9+.-]+):(?://(?:((?:[a-zA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})*)@)?((?:[a-zA-Z0-9-._~!$&'()*+,;=]|%[0-9A-F]{2})*)(?::(\d*))?(/(?:[a-zA-Z0-9-._~!$&'()*+,;=:@/]|%[0-9A-F]{2})*)?|(/?(?:[a-zA-Z0-9-._~!$&'()*+,;=:@]|%[0-9A-F]{2})+(?:[a-zA-Z0-9-._~!$&'()*+,;=:@/]|%[0-9A-F]{2})*)?)(?:\?((?:[a-zA-Z0-9-._~!$&'()*+,;=:/?@]|%[0-9A-F]{2})*))?(?:#((?:[a-zA-Z0-9-._~!$&'()*+,;=:/?@]|%[0-9A-F]{2})*))?$" %))
                #(tg/fmap (fn [comps] (apply str comps))
                          (tg/tuple scheme-generator domain-generator (s/gen ::absolute-path)))))
+
 
 
 ;; CURIE string
@@ -67,6 +71,8 @@
                :curie ::curie))
 
 (s/def ::path (s/or
+               :empty-path    (s/with-gen #(= % "")
+                                #(tg/return ""))
                :relative-path ::relative-path
                :absolute-path ::absolute-path))
 

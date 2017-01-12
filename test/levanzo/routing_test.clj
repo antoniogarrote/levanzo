@@ -20,9 +20,9 @@
                             :handlers {:get handler}}]})
 
 (deftest process-routes-test
-  (reset! routing/*routes-register* {})
+  (routing/clear!)
   (is (spec-utils/check-symbol `routing/process-routes))
-  (reset! routing/*routes-register* {})
+  (routing/clear!)
   (let [routes (routing/process-routes test-routes)]
     (is (= (keyword "/vocab#Class") (:handler (bidi/match-route routes "/"))))
     (is (= (keyword "/vocab#Nested1") (:handler (bidi/match-route routes "/nested1"))))
@@ -30,7 +30,7 @@
     (is (= (keyword "/vocab#Nested3")) (:handler (bidi/match-route routes "/nested3/4")))))
 
 (deftest link-for-test
-  (reset! routing/*routes-register* {})
+  (routing/clear!)
   (let [routes (routing/process-routes test-routes)]
-    (is (= "/" (routing/link-for routes "/vocab#Class")))
-    (is (= "/nested1/nested2/5" (routing/link-for routes "/vocab#Nested2" :id 5)))))
+    (is (= "/" (routing/link-for "/vocab#Class")))
+    (is (= "/nested1/nested2/5" (routing/link-for "/vocab#Nested2" :id 5)))))

@@ -31,15 +31,28 @@
                    :number number?
                    :boolean boolean?)))))
 
-(defn make-valid-payload-gen [class api]
+(defn valid-for-mode? [mode property-props]
+  (let [readonly (or (-> property-props ::hydra/readonly) false)
+        writeonly (or (-> property-props ::hydra/writeonly) false)]
+    (condp = mode
+      :read (not writeonly)
+      :write (not readonly)
+      :update (and (not writeonly) (not readonly)))))
+
+(defn make-valid-payload-gen [mode class api]
   (tg/fmap (fn [properties]
              (let [m (->> properties
+                          ;; remove properties not valid for the read mode, they
+                          ;; have been marked as nil
+                          (filter some?)
+                          ;; build the JSON-LD values
                           (map (fn [[k v]]
                                  (if (nil? v)
                                    [k []]
                                    (if (string? v)
                                      [k [{"@id" v}]]
                                      [k [v]]))))
+                          ;; collect the JSON-LD object
                           (into {}))]
                (-> m
                    (assoc "@id" "http://test.com/generated")
@@ -49,21 +62,23 @@
             (fn [properties]
               (let [generators (->> properties
                                     (mapv (fn [{:keys [property-props property]}]
-                                            (let [required (-> property-props ::hydra/required)
-                                                  property-id (-> property :common-props ::hydra/id)
-                                                  is-link (-> property :is-link)
-                                                  range (-> property :rdf-props ::hydra/range)]
-                                              (tg/tuple (tg/return property-id)
-                                                        (if required
-                                                          (if is-link
-                                                            (s/gen ::jsonld-spec/uri)
-                                                            (if (schema/xsd-uri? range)
-                                                              (make-xsd-type-gen range)
-                                                              (let [class (hydra/find-class api range)]
-                                                                ;; Careful! this will explode with cyclic APIs
-                                                                (do
-                                                                  (make-valid-payload-gen class api)))))
-                                                          (tg/return nil)))))))]
+                                            (if (valid-for-mode? mode property-props)
+                                              (let [required (-> property-props ::hydra/required)
+                                                    property-id (-> property :common-props ::hydra/id)
+                                                    is-link (-> property :is-link)
+                                                    range (-> property :rdf-props ::hydra/range)]
+                                                (tg/tuple (tg/return property-id)
+                                                          (if required
+                                                            (if is-link
+                                                              (s/gen ::jsonld-spec/uri)
+                                                              (if (schema/xsd-uri? range)
+                                                                (make-xsd-type-gen range)
+                                                                (let [class (hydra/find-class api range)]
+                                                                  ;; Careful! this will explode with cyclic APIs
+                                                                  (do
+                                                                    (make-valid-payload-gen mode class api)))))
+                                                            (tg/return nil))))
+                                              (tg/return nil)))))]
                 (apply tg/tuple generators))))))
 
 (defn make-property-gen [type]
@@ -219,27 +234,29 @@
 (deftest parse-supported-class-test
   (let [klasses (take 3 (gen/sample (make-class-gen "http://test.com/Test" 15)))]
     (doseq [klass klasses]
-      (doseq [instance (gen/sample (make-valid-payload-gen klass nil) 10)]
-        (let [errors ((schema/parse-supported-class {} klass) {} instance)
-              valid (nil? errors)]
-          (when (not valid)
-            (prn instance)
-            (prn errors))
-          (is valid))))))
+      (doseq [mode [:read :write :update]]
+        (doseq [instance (gen/sample (make-valid-payload-gen mode klass nil) 10)]
+          (let [errors ((schema/parse-supported-class {} klass) mode {} instance)
+                valid (nil? errors)]
+            (when (not valid)
+              (prn instance)
+              (prn errors))
+            (is valid)))))))
 
 (deftest parse-supported-class-api-test
   (doseq [api (take-last 3 (gen/sample (make-api-tree-gen) 15))]
     (s/valid? ::hydra/ApiDocumentation api)
     (let [validations-map (schema/build-api-validations api)]
       (doseq [klass (:supported-classes api)]
-        (doseq [instance (gen/sample (make-valid-payload-gen klass api) 10)]
-          (let [validation (get validations-map (-> klass :common-props ::hydra/id))
-                errors (validation validations-map instance)
-                valid (nil? errors)]
-            (when (not valid)
-              (prn instance)
-              (prn errors))
-            (is valid)))))))
+        (doseq [mode [:read :write :update]]
+          (doseq [instance (gen/sample (make-valid-payload-gen mode klass api) 10)]
+            (let [validation (get validations-map (-> klass :common-props ::hydra/id))
+                  errors (validation mode validations-map instance)
+                  valid (nil? errors)]
+              (when (not valid)
+                (prn instance)
+                (prn errors))
+              (is valid))))))))
 
 (deftest parse-plain-property-test
   (spec-utils/check-symbol `schema/parse-plain-property))

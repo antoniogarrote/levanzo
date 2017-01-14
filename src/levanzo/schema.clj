@@ -10,6 +10,9 @@
             [clojure.spec.gen :as gen]
             [clojure.test.check.generators :as tg]))
 
+;; context in which a validation must be performed: reading (GET) , write (POST), update (PUT/PATCH)
+(s/def ::mode #{:read :write :update})
+
 ;; Definitions around validation errors reporting data
 (s/def ::error-type keyword?)
 (s/def ::error-cause any?)
@@ -17,10 +20,14 @@
 (s/def ::ValidationError (s/keys :req-un [::error-type ::error-cause ::error-message]))
 (defrecord ValidationError [error-type error-cause error-message])
 
+;; A container of validations for different Hydra model components identified by URI
 (s/def ::ValidationsMap (s/with-gen
                           (s/map-of ::jsonld-spec/uri ::predicate)
                           #(tg/return {})))
-(s/def ::predicate (s/fspec :args (s/cat :validations-map ::ValidationsMap
+
+;; A validation predicate
+(s/def ::predicate (s/fspec :args (s/cat :mode ::mode
+                                         :validations-map ::ValidationsMap
                                          :jsonld ::jsonld-spec/expanded-jsonld)
                             :ret (s/nilable ::ValidationError)))
 
@@ -30,6 +37,7 @@
         :args (s/cat :maybe-error (s/alt :non-error  any?
                                          :validation-error ::ValidationError))
         :ret boolean?)
+
 (defn invalid?
   "Checks if the argument is a validation error"
   [maybe-error]
@@ -60,25 +68,28 @@
 
 
 (s/fdef check-range
-        :args (s/with-gen (s/cat :api ::ValidationsMap
+        :args (s/with-gen (s/cat :mode ::mode
+                                 :api ::ValidationsMap
                                  :range ::jsonld-spec/uri
                                  :value (s/or
                                          :nested ::jsonld-spec/expanded-jsonld
                                          :literal ::jsonld-spec/jsonld-literal))
-                #(tg/tuple (tg/return {})
-                           (s/gen ::jsonld-spec/datatype)
-                           (s/gen ::jsonld-spec/jsonld-literal)))
+                #(tg/tuple
+                  (s/gen ::mode)
+                  (tg/return {})
+                  (s/gen ::jsonld-spec/datatype)
+                  (s/gen ::jsonld-spec/jsonld-literal)))
         :ret (s/nilable ::ValidationError))
 (defn check-range
   "Checks that one JSON-LD property value matches a particular range"
-  [api-validations range value]
+  [mode api-validations range value]
   (if (xsd-uri? range)
     (if (check-xsd-range range value)
       nil
       (->ValidationError :range-error [range value] (str "Error validating xsd range for range " range " and value " value)))
     (let [validation (get api-validations range)]
       (if (some? validation)
-        (validation api-validations value)
+        (validation mode api-validations value)
         (throw (Exception. (str "Cannot validate missing range class " range)))))))
 
 
@@ -90,7 +101,7 @@
 (defn parse-link
   "Creates a validator for a hydra link property value"
   [api link]
-  (fn [api-validations jsonld]
+  (fn [mode api-validations jsonld]
     (if (and (some? (get jsonld "@id"))
              (string? (get jsonld "@id")))
       nil
@@ -107,15 +118,69 @@
 (defn parse-property
   "Creates a validator for a hydra rdf literal property value"
   [api property]
-  (fn [api-validations jsonld]
+  (fn [mode api-validations jsonld]
     (let [range (-> property :rdf-props ::hydra/range)]
       (try
-        (let [validation-result (check-range api-validations range jsonld)]
+        (let [validation-result (check-range mode api-validations range jsonld)]
           (if (invalid? validation-result)
             (->ValidationError :property-range-error validation-result (str "Not value (" jsonld ") in range (" range ") of property " (-> property :common-props ::hydra/id)))
             nil))
         (catch Exception ex
           (->ValidationError :property-range-error property (.getMessage ex)))))))
+
+(s/fdef check-access-mode
+        :args (s/cat :mode ::mode
+                     :supported-property ::hydra/SupportedProperty)
+        :ret (s/nilable ::ValidationError))
+(defn check-access-mode
+  "Checks if a property is compatible with the access mode"
+  [mode supported-property]
+  (let [readonly (or (-> supported-property :property-props ::hydra/readonly) false)
+        writeonly (or (-> supported-property :property-props ::hydra/writeonly) false)]
+    (condp = mode
+      :read (when writeonly
+              (->ValidationError :access-mode-error {:property-mode {:readonly readonly :writeonly writeonly} :access-mode mode :property supported-property}
+                                 "Writeonly property cannot be access in read mode"))
+      :write (when readonly
+               (->ValidationError :access-mode-error {:property-mode {:readonly readonly :writeonly writeonly} :access-mode mode :property supported-property}
+                                  "Readonly property cannot be access in write mode"))
+      :update (when (or readonly writeonly)
+                (->ValidationError :access-mode-error {:property-mode {:readonly readonly :writeonly writeonly} :access-mode mode :property supported-property}
+                                   "Readonly and writeonly properties cannot be access in update mode"))
+      (throw (Exception. (str "Unknown access mode " mode))))))
+
+(s/fdef compatible-mode?
+        :args (s/cat :mode ::mode
+                     :supported-property ::hydra/supported-propert)
+        :ret boolean?)
+(defn compatible-mode? [mode supported-property]
+  (let [readonly    (or (-> supported-property :property-props ::hydra/readonly) false)
+        writeonly   (or (-> supported-property :property-props ::hydra/writeonly) false)]
+    (condp = mode
+      :read (not writeonly)
+      :write (not readonly)
+      :update (and (not writeonly) (not readonly)))))
+
+(s/fdef with-access-mode-validation
+        :args (s/cat :supported-property ::hydra/SupportedProperty
+                     :predicate ::predicate)
+        :ret ::predicate)
+(defn with-access-mode-validation
+  "Wraps a validation to provide access mode validation"
+  [supported-property predicate]
+  (let [property-id (-> supported-property :property :common-props ::hydra/id)]
+    (fn [mode api-validations jsonld]
+      (if (contains? jsonld property-id)
+        ;; the property is in the payload, we must check valid access mode
+        (let [access-mode-result (check-access-mode mode supported-property)]
+          (if (invalid? access-mode-result)
+            access-mode-result
+            (predicate mode api-validations jsonld)))
+        ;; the property is not in the map, but might be a missing
+        ;; mandatory property, we check if it is compatible with the access mode
+        (if (compatible-mode? mode supported-property)
+          (predicate mode api-validations jsonld)
+          nil)))))
 
 (s/fdef parse-supported-link
         :args (s/cat :api ::hydra/ApiDocumentation
@@ -123,41 +188,48 @@
                                                 #(-> % :property :is-link)))
         :ret ::predicate
         :fn (s/and
-             #(let [property (-> % :args :supported-property :property :common-props ::hydra/id)
+             #(let [readonly  (-> % :args :supported-property :property-props ::hydra/readonly)
+                    writeonly(-> % :args :supported-property :property-props ::hydra/writeonly)
+                    property (-> % :args :supported-property :property :common-props ::hydra/id)
                     required (-> % :args :supported-property :property-props ::hydra/required)
-                    predicate (-> % :ret)]
+                    predicate (-> % :ret)
+                    mode (cond
+                           readonly  :read
+                           writeonly :write
+                           :else     :update)]
                 (and (or (not required)
-                         (invalid? (predicate {} {})))
+                         (invalid? (predicate mode {} {})))
                      (or (not required)
-                         (invalid? (predicate {} {property []})))
-                     (invalid? (predicate {} {property [{"@value" 1} {"@value" 2}]})))
+                         (invalid? (predicate mode {} {property []})))
+                     (invalid? (predicate mode {} {property [{"@value" 1} {"@value" 2}]})))
                 true)))
 (defn parse-supported-link
   "Creates a specification for a hydra link"
   [api supported-property]
   (let [link (:property supported-property)
         property-validator (parse-link api link)]
-    (fn [api-validations jsonld]
-      (let [link-id (-> link :common-props ::hydra/id)
-            is-optional (not (-> supported-property :property-props ::hydra/required))
-            values (get jsonld link-id [])
-            value (first values)]
-        (cond
-          (= 0 (count values)) (if is-optional
-                                 nil
-                                 (->ValidationError :link-property-error
+    (with-access-mode-validation supported-property
+      (fn [mode api-validations jsonld]
+        (let [link-id (-> link :common-props ::hydra/id)
+              is-optional (not (-> supported-property :property-props ::hydra/required))
+              values (get jsonld link-id [])
+              value (first values)]
+          (cond
+            (= 0 (count values)) (if is-optional
+                                   nil
+                                   (->ValidationError :link-property-error
+                                                      supported-property
+                                                      (str "Missing mandatory property " link-id)))
+            (> 1 (count values)) (->ValidationError :link-property-error
                                                     supported-property
-                                                    (str "Missing mandatory property " link-id)))
-          (> 1 (count values)) (->ValidationError :link-property-error
-                                                  supported-property
-                                                  (str "Cardinality error, more than one link value for property " link-id))
-          :else                   (let [validation-result (property-validator api-validations value)]
-                                    (if (nil? validation-result)
-                                      validation-result
-                                      (->ValidationError :link-property-error
-                                                         {:supported-property supported-property
-                                                          :nested-validation-error validation-result}
-                                                         (str "Erroneous link for supported property link" link-id)))))))))
+                                                    (str "Cardinality error, more than one link value for property " link-id))
+            :else                   (let [validation-result (property-validator mode api-validations value)]
+                                      (if (nil? validation-result)
+                                        validation-result
+                                        (->ValidationError :link-property-error
+                                                           {:supported-property supported-property
+                                                            :nested-validation-error validation-result}
+                                                           (str "Erroneous link for supported property link" link-id))))))))))
 
 (s/fdef parse-plain-property
         :args (s/cat :api ::hydra/ApiDocumentation
@@ -172,37 +244,44 @@
                                                      (s/gen ::hydra/SupportedProperty))))
         :ret ::predicate
         :fn (s/and
-             #(let [property  (-> % :args :supported-property :property :common-props ::hydra/id)
+             #(let [readonly  (-> % :args :supported-property :property-props ::hydra/readonly)
+                    writeonly(-> % :args :supported-property :property-props ::hydra/writeonly)
+                    property  (-> % :args :supported-property :property :common-props ::hydra/id)
                     required  (-> % :args :supported-property :property-props ::hydra/required)
-                    predicate (-> % :ret)]
+                    predicate (-> % :ret)
+                    mode (cond
+                           readonly  :read
+                           writeonly :write
+                           :else     :update)]
                 (and (or (not required)
-                         (invalid? (predicate {} {})))
+                         (invalid? (predicate mode {} {})))
                      (or (not required)
-                         (invalid? (predicate {} {property []})))
-                     (invalid? (predicate {} {property [{"@value" 1} {"@value" 2}]}))))))
+                         (invalid? (predicate mode {} {property []})))
+                     (invalid? (predicate mode {} {property [{"@value" 1} {"@value" 2}]}))))))
 (defn parse-plain-property
   "Creates a specification for a hydra property"
   [api supported-property]
   (let [property (:property supported-property)
         property-validator (parse-property api property)]
 
-    (fn [api-validations jsonld]
-      (let [property-id (-> property :common-props ::hydra/id)
-            is-optional (not (-> supported-property :property-props ::hydra/required))
-            values (get jsonld property-id)
-            value (first values)]
-        (cond
-          (= 0 (count values))  (if is-optional
-                                  nil
-                                  (->ValidationError :property-error supported-property (str "Missing mandatory property " property)))
-          (> 1 (count values))  (->ValidationError :property-error supported-property (str "Cardinality error, more than one link value for property " property))
-          :else                   (let [validation-result (property-validator api-validations value)]
-                                    (if (nil? validation-result)
-                                      validation-result
-                                      (->ValidationError :property-error
-                                                         {:supported-property supported-property
-                                                          :nested-validation-error validation-result}
-                                                         (str "Erroneous value for supported property" property-id)))))))))
+    (with-access-mode-validation supported-property
+      (fn [mode api-validations jsonld]
+        (let [property-id (-> property :common-props ::hydra/id)
+              is-optional (not (-> supported-property :property-props ::hydra/required))
+              values (get jsonld property-id)
+              value (first values)]
+          (cond
+            (= 0 (count values))  (if is-optional
+                                    nil
+                                    (->ValidationError :property-error supported-property (str "Missing mandatory property " property)))
+            (> 1 (count values))  (->ValidationError :property-error supported-property (str "Cardinality error, more than one link value for property " property))
+            :else                   (let [validation-result (property-validator mode api-validations value)]
+                                      (if (nil? validation-result)
+                                        validation-result
+                                        (->ValidationError :property-error
+                                                           {:supported-property supported-property
+                                                            :nested-validation-error validation-result}
+                                                           (str "Erroneous value for supported property" property-id))))))))))
 
 
 (s/fdef parse-supported-property
@@ -214,7 +293,7 @@
   [api supported-property]
   (cond
     (-> supported-property :property :is-link) (parse-supported-link api supported-property)
-    (-> supported-property :property :is-template) (fn [_ _] nil)
+    (-> supported-property :property :is-template) (fn [_ _ _] nil)
     :else  (parse-plain-property api supported-property)))
 
 
@@ -226,11 +305,11 @@
   "Creates a specification for a hydra supported class"
   [api api-class]
   (let [validations (map #(parse-supported-property api %) (-> api-class :supported-properties))]
-    (fn [api-validations jsonld]
+    (fn [mode api-validations jsonld]
       (and (map? jsonld)
            (let [errors (->> validations
                              (map (fn [validation]
-                                    (validation api-validations jsonld)))
+                                    (validation mode api-validations jsonld)))
                              (filter #(not (nil? %))))]
              (if (empty? errors)
                nil

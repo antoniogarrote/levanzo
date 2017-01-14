@@ -332,7 +332,9 @@
 
 ;; Hydra/RDF properties options, hydra:required, hydra:writeonly, hydra:readonly
 ;; id type title and description
-(s/def ::property-props (s/keys :opt [::required ::writeonly ::readonly]))
+(s/def ::property-props (s/and (s/keys :opt [::required ::writeonly ::readonly])
+                               ;; properties cannot be at the same time readonly and writeonly
+                               #(not (and (::writeonly %) (::readonly %)))))
 ;; RDF property
 (s/def ::property ::Property)
 ;; List of operations associated to a link/template
@@ -349,9 +351,9 @@
 (s/def ::SupportedProperty
   (s/with-gen (s/and
                (s/keys :req-un [::property
-                                      ::common-props
-                                      ::property-props
-                                      ::operations])
+                                ::common-props
+                                ::property-props
+                                ::operations])
                #(= (resolve "hydra:SupportedProperty") (:uri %))
                ;; no link/templates cannot have operations
                #(if (not (or (-> % :property :is-link) (-> % :property :is-template)))
@@ -392,21 +394,22 @@
                                                            ::readonly
                                                            ::writeonly
                                                            ::operations])
-                                   #(tg/fmap (fn [[property id type title description required readonly writeonly operations]]
-                                               (if (or (:is-link property)
-                                                       (:is-template property))
-                                                 {::property property ::id id ::type type ::title title ::description description
-                                                  ::required required ::readonly readonly ::writeonly writeonly ::operations operations}
-                                                 {::property property ::id id ::type type ::title title ::description description
-                                                  ::required required ::readonly readonly ::writeonly writeonly ::operations []}))
+                                   #(tg/fmap (fn [[property id type title description required mode operations]]
+                                               (let [readonly (or (= mode :read) false)
+                                                     writeonly (or (= mode :write) false)]
+                                                 (if (or (:is-link property)
+                                                         (:is-template property))
+                                                   {::property property ::id id ::type type ::title title ::description description
+                                                    ::required required ::readonly readonly ::writeonly writeonly ::operations operations}
+                                                   {::property property ::id id ::type type ::title title ::description description
+                                                    ::required required ::readonly readonly ::writeonly writeonly ::operations []})))
                                              (tg/tuple (s/gen ::property)
                                                        (s/gen ::id)
                                                        (s/gen ::type)
                                                        (s/gen ::title)
                                                        (s/gen ::description)
                                                        (s/gen ::required)
-                                                       (s/gen ::readonly)
-                                                       (s/gen ::writeonly)
+                                                       (s/gen #{:read :write :update})
                                                        (s/gen ::operations)))))
 
 (s/fdef supported-property

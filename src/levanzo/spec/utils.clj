@@ -3,7 +3,7 @@
             [clojure.spec.test :as stest]
             [clojure.string :as string]))
 
-(def num-tests (Integer/parseInt (or (System/getenv "NUM_TESTS") "5")))
+(def num-tests (Integer/parseInt (or (System/getenv "NUM_TESTS") "20")))
 
 (defn is-checked-syms
   "Checks all public symbols in the library"
@@ -11,7 +11,9 @@
   (let [{:keys [total check-passed] :as results}
         (-> (stest/checkable-syms)
             (->> (filter (fn [sym] (and (nil? (string/index-of (str sym) "routing"))
-                                       (nil? (string/index-of (str sym) "schema"))))))
+                                       (nil? (string/index-of (str sym) "schema"))
+                                       (nil? (string/index-of (str sym) "payload"))
+                                       ))))
             (stest/check {:clojure.spec.test.check/opts {:num-tests num-tests}})
             stest/summarize-results)]
     (prn results)
@@ -25,6 +27,7 @@
                      (filter (fn [sym]
                                (and (nil? (string/index-of (str sym) "routing"))
                                     (nil? (string/index-of (str sym) "schema"))
+                                    (nil? (string/index-of (str sym) "payload"))
                                     ))))]
     (doseq [symbol symbols]
       (println "\n\nTESTING " symbol)

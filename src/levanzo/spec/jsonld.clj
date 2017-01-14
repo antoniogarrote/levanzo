@@ -55,8 +55,6 @@
                #(tg/fmap (fn [comps] (apply str comps))
                          (tg/tuple scheme-generator domain-generator (s/gen ::absolute-path)))))
 
-
-
 ;; CURIE string
 (s/def ::curie (s/with-gen
                  (s/and string? #(re-matches #".*\:.+" %))

@@ -1,12 +1,12 @@
 (ns levanzo.namespaces
   (:require [clojure.string :as string]))
 
-(def ns-register (atom {}))
-(def inverse-ns-register (atom {}))
+(def ^:dynamic *ns-register* (atom {}))
+(def ^:dynamic *inverse-ns-register* (atom {}))
 
 (defn register [prefix uri]
-  (swap! ns-register (fn [acc] (assoc acc prefix uri)))
-  (swap! inverse-ns-register (fn [acc] (assoc acc uri prefix))))
+  (swap! *ns-register* (fn [acc] (assoc acc prefix uri)))
+  (swap! *inverse-ns-register* (fn [acc] (assoc acc uri prefix))))
 
 (defmacro define-rdf-ns [ns url]
   `(do
@@ -21,15 +21,17 @@
 
 (defn resolve [curie]
   (let [[p s] (string/split curie #"\:")]
-    (if (some? (get @ns-register p))
-      (str (get @ns-register p) s)
+    (if (some? (get @*ns-register* p))
+      (str (get @*ns-register* p) s)
       curie)))
 
-(defn default-ns [prefix]
-  (register "" prefix))
+(defn default-ns
+  ([prefix]
+   (register "" prefix))
+  ([] (get @*ns-register* "")))
 
 (defn prefix-for-ns [ns]
-  (get @ns-register ns))
+  (get @*ns-register* ns))
 
 (defn default-ns? []
-  (some? (get @ns-register "")))
+  (some? (get @*ns-register* "")))

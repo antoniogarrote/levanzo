@@ -3,7 +3,7 @@
    Functions in this namespaces assumes payloads will be expanded JSON-LD payloads."
   (:require [levanzo.hydra :as hydra]
             [levanzo.spec.jsonld :as jsonld-spec]
-            [levanzo.namespaces :refer [xsd prefix-for-ns]]
+            [levanzo.namespaces :refer [xsd prefix-for-ns resolve]]
             [clojure.spec :as s]
             [clojure.string :as string]
             [clojure.spec.test :as stest]
@@ -130,7 +130,8 @@
                          (invalid? (predicate {} {})))
                      (or (not required)
                          (invalid? (predicate {} {property []})))
-                     (invalid? (predicate {} {property [{"@value" 1} {"@value" 2}]}))))))
+                     (invalid? (predicate {} {property [{"@value" 1} {"@value" 2}]})))
+                true)))
 (defn parse-supported-link
   "Creates a specification for a hydra link"
   [api supported-property]
@@ -158,28 +159,33 @@
                                                           :nested-validation-error validation-result}
                                                          (str "Erroneous link for supported property link" link-id)))))))))
 
-
 (s/fdef parse-plain-property
         :args (s/cat :api ::hydra/ApiDocumentation
-                     :supported-property (s/and ::hydra/SupportedProperty
-                                                #(and (not (-> % :property :is-link))
-                                                      (not (-> % :property :is-template)))))
+                     :supported-property (s/with-gen (s/and ::hydra/SupportedProperty
+                                                            #(and (not (-> % :property :is-link))
+                                                                  (not (-> % :property :is-template))))
+                                           #(tg/fmap (fn [prop]
+                                                       (-> prop
+                                                           (assoc-in [:property :is-link] false)
+                                                           (assoc-in [:property :is-template] false)
+                                                           (assoc-in [:property :uri] (resolve "rdf:Property"))))
+                                                     (s/gen ::hydra/SupportedProperty))))
         :ret ::predicate
         :fn (s/and
-             #(let [property  (-> % :args :supported-property :property ::hydra/id)
+             #(let [property  (-> % :args :supported-property :property :common-props ::hydra/id)
                     required  (-> % :args :supported-property :property-props ::hydra/required)
                     predicate (-> % :ret)]
                 (and (or (not required)
                          (invalid? (predicate {} {})))
                      (or (not required)
                          (invalid? (predicate {} {property []})))
-                     (invalid? (predicate {} {property [{"@value" 1} {"@value" 2}]})))
-                true)))
+                     (invalid? (predicate {} {property [{"@value" 1} {"@value" 2}]}))))))
 (defn parse-plain-property
   "Creates a specification for a hydra property"
   [api supported-property]
   (let [property (:property supported-property)
         property-validator (parse-property api property)]
+
     (fn [api-validations jsonld]
       (let [property-id (-> property :common-props ::hydra/id)
             is-optional (not (-> supported-property :property-props ::hydra/required))

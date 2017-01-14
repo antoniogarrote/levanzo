@@ -197,9 +197,6 @@
                                                 (payload/type User)
                                                 (payload/supported-link (vocab "raised-issues-link") {:user-id next-id})))
                        bson (json->bson user)]
-                   (println "JSON -> BSON")
-                   (prn user)
-                   (prn bson)
                    (mc/save db "users" bson)
                    user)))
 
@@ -331,3 +328,46 @@
                                               {:path ["register-users"]
                                                :model (vocab "register-users-link")
                                                :handlers {:post post-user}}]}))
+
+
+(comment
+
+  (clojure.spec/check-asserts true)
+
+  (do (mc/remove db "issues" {})
+      (mc/remove db "users" {})
+      (mc/remove db "counters" {}))
+
+  (get-entrypoint {} nil nil)
+  (get-users {} nil nil)
+  (get-user {:user-id 1} nil nil)
+
+  (def user (post-user {} (payload/json-ld
+                           (payload/supported-property name "User 1")
+                           (payload/supported-property email "user1@test.com")
+                           (payload/supported-property password "test001"))
+                       {}))
+
+  (def update-result (put-user {:user-id 1} (payload/json-ld
+                                             (payload/supported-property email "user1@test2.com"))
+                               {}))
+
+  (delete-user {:user-id 1} nil nil)
+
+  (get-issues-for-user {:user-id 1} nil nil)
+  (def issue (post-issue-for-user {:user-id 1}
+                                  (payload/json-ld
+                                   (payload/supported-property title "Test Issue")
+                                   (payload/supported-property description "This is just a test issue")
+                                   (payload/supported-property created-at (str (java.time.LocalDateTime/now))))
+                                  {}))
+  (get-issues {} nil nil)
+
+
+
+
+  (put-user {:user-id 14} (assoc user (vocab "name") "Updated") nil)
+
+  (get-user {:user-id 1} {} {})
+
+  (delete-user {:user-id 10} {} nil))

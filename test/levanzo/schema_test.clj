@@ -83,14 +83,6 @@
            (s/gen (s/and ::hydra/SupportedProperty
                          #(= (resolve "rdf:Property") (-> % :property :uri))))))
 
-;;(defn make-literal-property-gen [type required]
-;;  (tg/fmap (fn [supported-property]
-;;             (-> supported-property
-;;                 (assoc-in [:property-props ::hydra/required] required)))
-;;           (s/gen ::hydra/SupportedProperty
-;;                  {::hydra/property (make-property-gen type)})))
-
-
 (defn make-link-property-gen [target required]
   (tg/fmap (fn [[property operation]]
              (let [operation (-> operation
@@ -248,3 +240,6 @@
               (prn instance)
               (prn errors))
             (is valid)))))))
+
+(deftest parse-plain-property-test
+  (spec-utils/check-symbol `schema/parse-plain-property))

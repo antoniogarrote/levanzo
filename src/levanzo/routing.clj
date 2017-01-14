@@ -102,8 +102,8 @@
 
 (s/fdef link-for
         :args (s/cat :model ::hydra/id
-                     :link-args (s/coll-of (s/or :keys keyword?
-                                                 :val any?)))
+                     :link-args (s/* (s/or :keys keyword?
+                                           :val any?)))
         :ret (s/or :id ::hydra/id
                    :path ::jsonld-spec/path))
 (defn link-for

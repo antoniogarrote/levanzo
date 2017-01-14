@@ -347,15 +347,16 @@
                               operations])
 
 (s/def ::SupportedProperty
-  (s/with-gen (s/and (s/keys :req-un [::property
+  (s/with-gen (s/and
+               (s/keys :req-un [::property
                                       ::common-props
                                       ::property-props
                                       ::operations])
-                     #(= (resolve "hydra:SupportedProperty") (:uri %))
-                     ;; no link/templates cannot have operations
-                     #(if (not (or (-> % :property :is-link) (-> % :property :is-template)))
-                        (empty? (:operations %))
-                        true))
+               #(= (resolve "hydra:SupportedProperty") (:uri %))
+               ;; no link/templates cannot have operations
+               #(if (not (or (-> % :property :is-link) (-> % :property :is-template)))
+                  (empty? (:operations %))
+                  true))
     #(tg/fmap (fn [[property common-props property-props operations]]
                 (if (or (:is-link property)
                         (:is-template property))

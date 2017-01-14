@@ -332,7 +332,7 @@
 
 ;; Hydra/RDF properties options, hydra:required, hydra:writeonly, hydra:readonly
 ;; id type title and description
-(s/def ::property-props (s/keys :opt [::required ::writeonly ::readonly  ::route]))
+(s/def ::property-props (s/keys :opt [::required ::writeonly ::readonly]))
 ;; RDF property
 (s/def ::property ::Property)
 ;; List of operations associated to a link/template
@@ -360,9 +360,7 @@
     #(tg/fmap (fn [[property common-props property-props operations]]
                 (if (or (:is-link property)
                         (:is-template property))
-                  (let [route (or (-> property-props ::route) ["/prop"])
-                        property-props (assoc property-props ::route route)]
-                    (->SupportedProperty (resolve "hydra:SupportedProperty") property common-props property-props operations))
+                  (->SupportedProperty (resolve "hydra:SupportedProperty") property common-props property-props operations)
                   (->SupportedProperty (resolve "hydra:SupportedProperty") property common-props property-props [])))
               (tg/tuple
                (s/gen ::Property)
@@ -393,15 +391,14 @@
                                                            ::required
                                                            ::readonly
                                                            ::writeonly
-                                                           ::route
                                                            ::operations])
-                                   #(tg/fmap (fn [[property id type title description required readonly writeonly route operations]]
+                                   #(tg/fmap (fn [[property id type title description required readonly writeonly operations]]
                                                (if (or (:is-link property)
                                                        (:is-template property))
                                                  {::property property ::id id ::type type ::title title ::description description
-                                                  ::required required ::readonly readonly ::writeonly writeonly ::route route ::operations operations}
+                                                  ::required required ::readonly readonly ::writeonly writeonly ::operations operations}
                                                  {::property property ::id id ::type type ::title title ::description description
-                                                  ::required required ::readonly readonly ::writeonly writeonly ::route route :operations []}))
+                                                  ::required required ::readonly readonly ::writeonly writeonly ::operations []}))
                                              (tg/tuple (s/gen ::property)
                                                        (s/gen ::id)
                                                        (s/gen ::type)
@@ -410,7 +407,6 @@
                                                        (s/gen ::required)
                                                        (s/gen ::readonly)
                                                        (s/gen ::writeonly)
-                                                       (s/gen ::route)
                                                        (s/gen ::operations)))))
 
 (s/fdef supported-property
@@ -434,8 +430,7 @@
            :levanzo.hydra/description
            :levanzo.hydra/required
            :levanzo.hydra/readonly
-           :levanzo.hydra/writeonly
-           :levanzo.hydra/route]}]
+           :levanzo.hydra/writeonly]}]
   (->SupportedProperty (resolve "hydra:SupportedProperty")
                        property
                        (clean-nils {::id id
@@ -444,8 +439,7 @@
                                     ::description description})
                        (clean-nils {::required required
                                     ::readonly readonly
-                                    ::writeonly writeonly
-                                    ::route route})
+                                    ::writeonly writeonly})
                        (or operations [])))
 
 
@@ -512,22 +506,18 @@
 (s/def ::is-paginated boolean?)
 ;; Class of the collection members
 (s/def ::member-class ::jsonld-spec/uri)
-;; Route for the collection resources
-(s/def ::member-route ::route)
 
 (s/def ::Collection
   (s/keys :req-un [::jsonld-spec/uri
                    ::common-props
                    ::is-paginated
                    ::member-class
-                   ::member-route
                    ::operations]))
 
 (s/def ::collection-args (s/keys :req [::id
                                        ::operations
                                        ::is-paginated
-                                       ::member-class
-                                       ::member-route]
+                                       ::member-class]
                                  :un [::type
                                       ::title
                                       ::description]))
@@ -535,7 +525,6 @@
 (defrecord Collection [uri
                        is-paginated
                        member-class
-                       member-route
                        common-props
                        operations])
 
@@ -558,13 +547,11 @@
               ::Collection
               #(= (:uri %) (resolve "hydra:Collection"))
               #(not (nil? (-> % :member-class)))
-              #(not (nil? (-> % :member-route)))
               #(not (nil? (-> % :is-paginated))))
         :fn (s/and
              #(= (-> % :ret :operations count) (-> % :args :collection-args ::operations count))))
 (defn collection [{:keys [:levanzo.hydra/is-paginated
                           :levanzo.hydra/member-class
-                          :levanzo.hydra/member-route
                           :levanzo.hydra/operations
                           :levanzo.hydra/id
                           :levanzo.hydra/type
@@ -573,7 +560,6 @@
   (->Collection (resolve "hydra:Collection")
                 is-paginated
                 member-class
-                member-route
                 (clean-nils {::id id
                              ::title title
                              ::description description

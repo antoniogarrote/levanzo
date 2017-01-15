@@ -8,6 +8,7 @@
                  [bidi "2.0.16"]
                  [commons-validator "1.5.1"]
                  [cheshire "5.7.0"]
+                 [com.cemerick/url "0.1.1"]
                  [com.github.jsonld-java/jsonld-java "0.9.0"]
                  [org.clojure/test.check "0.9.0" :scope "test"]
                  ;;; for testing

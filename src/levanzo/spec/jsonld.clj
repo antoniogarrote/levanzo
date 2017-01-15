@@ -119,6 +119,7 @@
                                         ret))
                                     (s/gen ::jsonld-literal-value))))
 
+(s/def ::link (s/map-of #{"@id"} ::uri))
 (s/def ::expanded-jsonld (s/merge (s/every (s/or :id (s/tuple #{"@id"} ::uri)
                                                  :type (s/tuple #{"@type"} (s/coll-of ::uri :gen-max 2 :min-count 1))
                                                  :literal (s/tuple ::uri (s/coll-of ::jsonld-literal :gen-max 2 :min-count 1))

@@ -5,7 +5,9 @@
             [levanzo.jsonld :as jsonld]
             [levanzo.spec.jsonld :as jsonld-spec]
             [clojure.spec :as s]
-            [clojure.test.check.generators :as tg]))
+            [clojure.string :as string]
+            [clojure.test.check.generators :as tg]
+            [cemerick.url :refer [url-encode]]))
 
 (s/def ::common-props (s/with-gen (s/keys :req [::hydra/id])
                         #(tg/fmap (fn [uri]
@@ -201,3 +203,49 @@
   ([model]
    (s/assert ::supported-property-args [model])
    (supported-link model model)))
+
+(s/def ::current integer?)
+(s/def ::first integer?)
+(s/def ::last integer?)
+(s/def ::next integer?)
+(s/def ::previous integer?)
+(s/def ::pagination-param string?)
+(s/def ::view (s/tuple #{(lns/hydra "view")}
+                       (s/every (s/or
+                                 :id (s/tuple #{"@id"} string?)
+                                 :type (s/tuple #{"@type"} string?)
+                                 :first (s/tuple #{(lns/hydra "first")} ::jsonld-spec/link)
+                                 :last (s/tuple #{(lns/hydra "last")} ::jsonld-spec/link)
+                                 :previous (s/tuple #{(lns/hydra "previous")} ::jsonld-spec/link)
+                                 :next (s/tuple #{(lns/hydra "next")} ::jsonld-spec/link))
+                                :into {})))
+
+(defn add-param [base-uri param value]
+  (if (some? value)
+    (if (string/index-of base-uri "?")
+      (str base-uri "&" (url-encode param) "=" value)
+      (str base-uri "?" (url-encode param) "=" value))
+    nil))
+
+(s/fdef partial-view
+        :args (s/cat :collection-uri ::hydra/id
+                     :view-map (s/keys :req-un [::pagination-param
+                                                ::current]
+                                       :opt-un [::first
+                                                ::last
+                                                ::next
+                                                ::previous]))
+        :ret ::view)
+(defn partial-view
+  "Generates a collection partial view for a collection"
+  [collection-id {:keys [current first last next previous pagination-param]}]
+  [(lns/hydra "view") (->> {"@id" (add-param collection-id pagination-param current)
+                            "@type" (lns/hydra "PartialCollectionView")}
+                           (jsonld/link-if-some (add-param collection-id pagination-param first)
+                                                (lns/hydra "first"))
+                           (jsonld/link-if-some (add-param collection-id pagination-param last)
+                                                (lns/hydra "last"))
+                           (jsonld/link-if-some (add-param collection-id pagination-param next)
+                                                (lns/hydra "next"))
+                           (jsonld/link-if-some (add-param collection-id pagination-param previous)
+                                                (lns/hydra "previous")))])

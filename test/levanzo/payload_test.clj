@@ -60,3 +60,22 @@
   (stest/instrument `levanzo.routing/link-for {:stub #{`levanzo.routing/link-for}})
   (spec-utils/check-symbol `payload/supported-link)
   (stest/unstrument))
+
+(deftest partial-view-test
+  (spec-utils/check-symbol `payload/partial-view)
+  (is (=
+       {"http://www.w3.org/ns/hydra/core#view"
+        {"@id" "http://test.com/Collection?p=3",
+         "@type" "http://www.w3.org/ns/hydra/core#PartialCollectionView",
+         "http://www.w3.org/ns/hydra/core#first" {"@id" "http://test.com/Collection?p=0"},
+         "http://www.w3.org/ns/hydra/core#last" {"@id" "http://test.com/Collection?p=100"},
+         "http://www.w3.org/ns/hydra/core#next" {"@id" "http://test.com/Collection?p=4"},
+         "http://www.w3.org/ns/hydra/core#previous" {"@id" "http://test.com/Collection?p=2"}}}
+       (->> [(payload/partial-view "http://test.com/Collection"
+                                     {:current 3
+                                      :next 4
+                                      :previous 2
+                                      :pagination-param "p"
+                                      :first 0
+                                      :last 100})]
+              (into {})))))

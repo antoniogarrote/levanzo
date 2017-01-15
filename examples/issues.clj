@@ -10,7 +10,10 @@
             [monger.core :as mg]
             [monger.collection :as mc]
             [monger.operators :as mo]
-            [monger.conversion :as mconv]))
+            [monger.conversion :as mconv]
+            [monger.query :as mquery]))
+
+(http/set-debug-errors! true)
 
 (def port 8080)
 (def host (str "http://localhost:" port "/"))
@@ -181,6 +184,7 @@
 (defn bson->json [obj]
   (-> obj
       (mconv/from-db-object false)
+      (clojure.walk/stringify-keys)
       (assoc "@context" context)
       (dissoc "_id")))
 
@@ -200,14 +204,25 @@
                    (mc/save db "users" bson)
                    user)))
 
-(def get-users (fn [args body request]
-                 (let [users (->> (mc/find-seq db "users")
+(def page-size 5)
+(def get-users (fn [{:keys [page] :or {page "1"}} body request]
+                 (let [page (Integer/parseInt page)
+                       users (->> (mquery/with-collection db "users"
+                                    (mquery/find {})
+                                    (mquery/skip (* (dec page) page-size))
+                                    (mquery/limit page-size))
                                   (map bson->json))]
+                   (prn users)
                    (-> (payload/json-ld (payload/id (vocab "get-users-link"))
                                         (payload/type UsersCollection)
                                         (payload/title "Users Collection")
                                         (payload/members users)
-                                        (payload/total-items (count users)))
+                                        (payload/total-items (count users))
+                                        (payload/partial-view (payload/link-for (vocab "get-users-link") {})
+                                                              {:current page
+                                                               :pagination-param "page"
+                                                               :next (inc page)
+                                                               :previous (if (> page 1) (dec page) nil)}))
                        (jsonld/compact-json-ld context)))))
 
 (def get-user (fn [args body request]
@@ -348,7 +363,7 @@
       (mc/remove db "counters" {}))
 
   (get-entrypoint {} nil nil)
-  (get-users {} nil nil)
+  (get-users {:page "30"} nil nil)
   (get-user {:user-id 1} nil nil)
 
   (def user (post-user {} (payload/json-ld

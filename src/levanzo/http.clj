@@ -5,7 +5,9 @@
             [levanzo.hydra :as hydra]
             [levanzo.namespaces :as lns]
             [clojure.string :as string]
-            [cheshire.core :as json])
+            [cheshire.core :as json]
+            [taoensso.timbre :as log]
+            [cemerick.url :as url])
   (:import [java.io StringWriter PrintWriter]))
 
 ;; Should we return information about the stack trace of an error?
@@ -184,6 +186,7 @@
       (assoc :body nil)))
 
 (defn documentation-handler [api]
+  (log/debug "API Documentation request")
   (response->jsonld
    {:status 200
     :headers {"Content-Type" "application/ld+json"}
@@ -195,27 +198,38 @@
        server-name
        (if (not= 80 server-port) (str ":" server-port) "")))
 
+(defn params-map [query-string]
+  (-> (if (some? query-string) (url/query->map query-string) {})
+      (clojure.walk/keywordize-keys)))
+
 (defn middleware [{:keys [entrypoint-path api routes documentation-path] :as context}]
   (let [routes (routing/process-routes routes)
         validations (schema/build-api-validations api)
         context (merge context {:routes routes :validations validations})]
-    (fn [{:keys [uri body request-method] :as request}]
-      (if (= uri documentation-path)
-        (documentation-handler api)
-        (let [route (string/replace-first uri entrypoint-path "")
-              handler-info (routing/match route)
-              context (assoc context :base-url (base-url request))]
-          (if (some? handler-info)
-            (let [{:keys [handlers route-params]} handler-info
-                  handler (get handlers request-method)]
-              (if (some? handler)
-                (condp = request-method
-                  :get    (get-handler request route-params handler context)
-                  :head   (head-handler request route-params handler context)
-                  :post   (post-handler request route-params handler context)
-                  :put    (put-handler request route-params handler context)
-                  :patch  (patch-handler request route-params handler context)
-                  :delete (delete-handler request route-params handler context)
-                  :else (->405 (str "Method " request-method " not supported")))
-                (->405 (str "Method " request-method " not supported"))))
-            (->404 "Cannot find the requested resource")))))))
+
+    (fn [{:keys [uri body request-method query-string] :as request}]
+      (log/debug (str "Processing request " request-method " :: " uri))
+      (log/debug query-string)
+      (log/debug body)
+      (let [params  (params-map query-string)
+            context (assoc context :params params)]
+        (if (= uri documentation-path)
+          (documentation-handler api)
+          (let [route (string/replace-first uri entrypoint-path "")
+                handler-info (routing/match route)
+                context (assoc context :base-url (base-url request))]
+            (if (some? handler-info)
+              (let [{:keys [handlers route-params] :or {route-params {}}} handler-info
+                    route-params (merge route-params params)
+                    handler (get handlers request-method)]
+                (if (some? handler)
+                  (condp = request-method
+                    :get    (get-handler request route-params handler context)
+                    :head   (head-handler request route-params handler context)
+                    :post   (post-handler request route-params handler context)
+                    :put    (put-handler request route-params handler context)
+                    :patch  (patch-handler request route-params handler context)
+                    :delete (delete-handler request route-params handler context)
+                    :else (->405 (str "Method " request-method " not supported")))
+                  (->405 (str "Method " request-method " not supported"))))
+              (->404 "Cannot find the requested resource"))))))))

@@ -6,7 +6,7 @@
             [levanzo.namespaces :refer [resolve]]
             [levanzo.spec.jsonld :as jsonld-spec]
             [levanzo.utils :refer [clean-nils]]
-            [levanzo.jsonld :refer [add-not-dup assoc-if-some set-if-some]]))
+            [levanzo.jsonld :refer [add-not-dup assoc-if-some set-if-some link-if-some]]))
 
 (defprotocol JSONLDSerialisable
   "Protocol that must be implemented by implemented by elements of the model that can
@@ -91,8 +91,8 @@
                    (let [jsonld {"@type" (resolve "hydra:Operation")
                                  (resolve "hydra:method") (-> this :operation-props ::method)}]
                      (->> jsonld
-                          (set-if-some (-> this :operation-props ::expects) (resolve "hydra:expects"))
-                          (set-if-some (-> this :operation-props ::returns) (resolve "hydra:returns"))
+                          (link-if-some (-> this :operation-props ::expects) (resolve "hydra:expects"))
+                          (link-if-some (-> this :operation-props ::returns) (resolve "hydra:returns"))
                           (generic->jsonld (:common-props this))))))
 
 (s/fdef operation
@@ -213,8 +213,10 @@
                                         :else (resolve "rdf:Property"))]
                      (->> {"@id" (-> this :common-props ::id)
                            "@type" rdf-type}
-                          (set-if-some (-> this :rdf-props ::domain) (resolve "rdfs:domain"))
-                          (set-if-some (-> this :rdf-props ::range) (resolve "rdfs:range"))))))
+                          (set-if-some (-> this :common-props ::title) (resolve "rdfs:label"))
+                          (set-if-some (-> this :common-props ::description) (resolve "rdfs:comment"))
+                          (link-if-some (-> this :rdf-props ::domain) (resolve "rdfs:domain"))
+                          (link-if-some (-> this :rdf-props ::range) (resolve "rdfs:range"))))))
 
 (s/def ::Property (s/with-gen
                     (s/and (s/keys :req-un [::jsonld-spec/uri

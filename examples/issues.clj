@@ -37,7 +37,7 @@
                                 ::hydra/range (vocab "IssuesCollection")}))
 
 (def User (hydra/class {::hydra/id (vocab "User")
-                        ::hydra/title (vocab "User")
+                        ::hydra/title "User"
                         ::hydra/description "A User represents a person registered in the system."
                         ::hydra/supported-properties [(hydra/supported-property {::hydra/property name})
                                                       (hydra/supported-property {::hydra/property email})
@@ -86,7 +86,7 @@
                             ::hydra/description "The user who raised the issue"}))
 
 (def Issue (hydra/class {::hydra/id (vocab "Issue")
-                         ::hydra/title (vocab "Issue")
+                         ::hydra/title "Issue"
                          ::hydra/description "An Issue tracked by the system."
                          ::hydra/supported-properties [(hydra/supported-property {::hydra/property title})
                                                        (hydra/supported-property {::hydra/property description})
@@ -110,13 +110,13 @@
                                                                       ::hydra/description "Deletes a Issue entity"})]}))
 
 (def IssuesCollection (hydra/collection {::hydra/id (vocab "IssuesCollection")
-                                         ::hydra/title (vocab "IssuesCollection")
+                                         ::hydra/title "IssuesCollection"
                                          ::hydra/description "The collection of all issues"
                                          ::hydra/is-paginated false
                                          ::hydra/member-class (vocab "Issue")}))
 
 (def UsersCollection (hydra/collection {::hydra/id (vocab "UsersCollection")
-                                        ::hydra/title (vocab "UsersCollection")
+                                        ::hydra/title "UsersCollection"
                                         ::hydra/description "The collection of all users"
                                         ::hydra/is-paginated false
                                         ::hydra/member-class (vocab "User")}))
@@ -143,14 +143,12 @@
                               ::hydra/supported-properties [(hydra/supported-property {::hydra/id (vocab "get-issues-link")
                                                                                        ::hydra/property issues
                                                                                        ::hydra/operations
-                                                                                       [(hydra/post-operation {::hydra/expects (vocab "Issue")
-                                                                                                               ::hydra/returns (vocab "Issue")})
-                                                                                        (hydra/get-operation {::hydra/returns (vocab "IssuesCollection")})]})
+                                                                                       [(hydra/get-operation {::hydra/returns (vocab "IssuesCollection")})]})
                                                             (hydra/supported-property {::hydra/id (vocab "get-users-link")
                                                                                        ::hydra/property users
                                                                                        ::hydra/operations
                                                                                        [(hydra/get-operation {::hydra/returns (vocab "UsersCollection")})]})
-                                                            (hydra/supported-property {::hydra/id (vocab "post-users-link")
+                                                            (hydra/supported-property {::hydra/id (vocab "register-users-link")
                                                                                        ::hydra/property register-user
                                                                                        ::hydra/operations
                                                                                        [(hydra/post-operation {::hydra/expects (vocab "User")
@@ -171,7 +169,7 @@
 
 (def context (payload/context {:base host
                                :vocab (vocab "")
-                               :ns ["hydra"]}))
+                               :ns ["hydra" "rdfs"]}))
 
 
 (defn next-counter [collection]
@@ -330,7 +328,7 @@
                       {:path ["register-users"]
                        :model (vocab "register-users-link")
                        :handlers {:post post-user}}]})
-
+(hydra/->jsonld API)
 
 (def stop-server (http-kit/run-server (http/middleware {:api API
                                                         :routes routes

@@ -8,10 +8,11 @@
 (deftest context-test
   (spec-utils/check-symbol `payload/context)
   (with-bindings {#'lns/*ns-register* (atom {"hydra" "http://www.w3.org/ns/hydra/core#"})}
-    (is (= {} (payload/context {})))
-    (is (= {} (payload/context {:ns []})))
+    (is (= {"hydra" "http://www.w3.org/ns/hydra/core#", "rdfs" "http://www.w3.org/2000/01/rdf-schema#"} (payload/context {})))
+    (is (= {"hydra" "http://www.w3.org/ns/hydra/core#", "rdfs" "http://www.w3.org/2000/01/rdf-schema#"} (payload/context {:ns []})))
     (is (= {"@base" "http://test.com/base"
             "@vocab" "http://test.com/base#vocab"
+            "rdfs" "http://www.w3.org/2000/01/rdf-schema#"
             "hydra" "http://www.w3.org/ns/hydra/core#"}
            (payload/context {:base "http://test.com/base"
                              :vocab "http://test.com/base#vocab"

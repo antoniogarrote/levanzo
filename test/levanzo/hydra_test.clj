@@ -23,8 +23,8 @@
   ([method expects returns]
    (->> {"@type" "http://www.w3.org/ns/hydra/core#Operation"
          "http://www.w3.org/ns/hydra/core#method" method
-         "http://www.w3.org/ns/hydra/core#expects" expects
-         "http://www.w3.org/ns/hydra/core#returns" returns}
+         "http://www.w3.org/ns/hydra/core#expects" (if (some? expects) {"@id" expects} nil)
+         "http://www.w3.org/ns/hydra/core#returns" (if (some? returns) {"@id" returns} nil)}
         (filter (fn [[k v]] (not (nil? v))))
         (into {})))
   ([] (operation-jsonld "GET"))
@@ -95,8 +95,8 @@
       (is (= true (-> supported (get "http://www.w3.org/ns/hydra/core#required"))))
       (is (= true (-> supported (get "http://www.w3.org/ns/hydra/core#readonly"))))
       (is (= false (-> supported (get "http://www.w3.org/ns/hydra/core#writeonly"))))
-      (is (= "http://test.com#Domain" (-> supported (get "http://www.w3.org/ns/hydra/core#property") (get "http://www.w3.org/2000/01/rdf-schema#domain"))))
-      (is (= "http://test.com#Range" (-> supported (get "http://www.w3.org/ns/hydra/core#property") (get "http://www.w3.org/2000/01/rdf-schema#range")))))))
+      (is (= "http://test.com#Domain" (-> supported (get "http://www.w3.org/ns/hydra/core#property") (get "http://www.w3.org/2000/01/rdf-schema#domain") (get "@id"))))
+      (is (= "http://test.com#Range" (-> supported (get "http://www.w3.org/ns/hydra/core#property") (get "http://www.w3.org/2000/01/rdf-schema#range") (get "@id")))))))
 
 (def test-class (hydra/class {::hydra/id "http://test.com#MyClass"
                               ::hydra/title "MyClass"
@@ -118,14 +118,14 @@
             "http://www.w3.org/ns/hydra/core#property"
             {"@id" "http://xmlns.com/foaf/0.1/name"
              "@type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-             "http://www.w3.org/2000/01/rdf-schema#range" "http://www.w3.org/2001/XMLSchema#string"}
+             "http://www.w3.org/2000/01/rdf-schema#range" {"@id" "http://www.w3.org/2001/XMLSchema#string"}}
             "http://www.w3.org/ns/hydra/core#supportedOperation" []
             "http://www.w3.org/ns/hydra/core#required" true}
            {"@type" "http://www.w3.org/ns/hydra/core#SupportedProperty"
             "http://www.w3.org/ns/hydra/core#property"
             {"@id" "http://xmlns.com/foaf/0.1/age"
              "@type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-             "http://www.w3.org/2000/01/rdf-schema#range" "http://www.w3.org/2001/XMLSchema#decimal"}
+             "http://www.w3.org/2000/01/rdf-schema#range" {"@id" "http://www.w3.org/2001/XMLSchema#decimal"}}
             "http://www.w3.org/ns/hydra/core#supportedOperation" []}]
           "http://www.w3.org/ns/hydra/core#supportedOperation"
           [{"@type" "http://www.w3.org/ns/hydra/core#Operation"

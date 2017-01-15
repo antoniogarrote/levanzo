@@ -37,6 +37,8 @@
                        (map (fn [ns] [(name ns) (lns/prefix-for-ns (name ns))]))
                        (filter (fn [[ns uri]] (some? uri)))
                        (into {}))
+         prefixes (merge prefixes {"hydra" (lns/hydra)
+                                   "rdfs" (lns/rdfs)})
          vocab (if (lns/default-ns?)
                  (or vocab (lns/default-ns))
                  vocab)]

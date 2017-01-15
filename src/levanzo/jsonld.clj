@@ -59,11 +59,17 @@
 
 (defn set-if-some
   "Sets a property in the target if it exists in the source"
-  [source target jsonld]
-  (if (some? source)
-    (assoc jsonld target source)
-    jsonld))
+  ([source target jsonld]
+   (if (some? source)
+     (assoc jsonld target source)
+     jsonld)))
 
+(defn link-if-some
+  "Sets a property in the target if it exists in the source"
+  ([source target jsonld]
+   (if (some? source)
+     (assoc jsonld target {"@id" source})
+     jsonld)))
 
 (defn java->clj
   "Transforms a data structure made of Java objects into native

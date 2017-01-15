@@ -7,6 +7,9 @@
   :dependencies [[org.clojure/clojure "1.9.0-alpha14"]
                  [bidi "2.0.16"]
                  [commons-validator "1.5.1"]
-                 [com.novemberain/monger "3.1.0"]
+                 [cheshire "5.7.0"]
                  [com.github.jsonld-java/jsonld-java "0.9.0"]
-                 [org.clojure/test.check "0.9.0" :scope "test"]])
+                 [org.clojure/test.check "0.9.0" :scope "test"]
+                 ;;; for testing
+                 [com.novemberain/monger "3.1.0"]
+                 [http-kit "2.2.0"]])

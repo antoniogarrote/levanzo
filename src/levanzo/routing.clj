@@ -117,6 +117,28 @@
       (throw (throw (Exception. (str "Unknown model URI " (model-or-uri model))))))))
 
 
+(s/def ::route-params (s/map-of keyword? any?))
+
+(s/fdef match
+        :args (s/cat :path string?)
+        :ret (s/keys :req-un [::route-params
+                              ::path
+                              ::model
+                              ::handlers]))
+(defn match
+  "Matches a route to a set of handler information"
+  [path]
+  (let [matching-handler (try (bidi/match-route @*routes* path)
+                              (catch Exception ex
+                                nil))]
+    (if (some? matching-handler)
+      (let [{:keys [handler route-params]} matching-handler
+            handler-info (get @*routes-register* handler)]
+        (if (some? handler-info)
+          (assoc handler-info :route-params (or route-params {}))
+          nil))
+      nil)))
+
 (defn clear!
   "Cleans the routes information"
   []

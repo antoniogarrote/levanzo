@@ -4,14 +4,16 @@
             [levanzo.payload :as payload]
             [levanzo.namespaces :refer [xsd hydra]]
             [levanzo.jsonld :as jsonld]
+            [levanzo.http :as http]
             [clojure.spec.test :as stest]
+            [org.httpkit.server :as http-kit]
             [monger.core :as mg]
             [monger.collection :as mc]
             [monger.operators :as mo]
-            [monger.conversion :as mconv]
-            [bidi.bidi :as bidi]))
+            [monger.conversion :as mconv]))
 
-(def host "http://localhost/")
+(def port 8080)
+(def host (str "http://localhost:" port "/"))
 (def vocab (fn [x] (str host "vocab#" x)))
 
 (def name (hydra/property {::hydra/id (vocab "name")
@@ -299,39 +301,48 @@
                           (payload/compact))))
 
 (levanzo.routing/clear!)
-(def routes (routing/process-routes {:path [""]
-                                     :model EntryPoint
-                                     :handlers {:get get-entrypoint}
-                                     :nested [{:path ["issues"]
-                                               :model (vocab "get-issues-link")
-                                               :handlers {:get get-issues}
-                                               :nested [{:path ["/" :issue-id]
-                                                         :model Issue
-                                                         :handlers {:get get-issue
-                                                                    :put put-issue
-                                                                    :delete delete-issue}
-                                                         :nested [{:path ["/users/" :user-id]
-                                                                   :model (vocab "raised-by-link")
-                                                                   :handlers {:get get-user-for-issue}}]}]}
-                                              {:path ["users"]
-                                               :model (vocab "get-users-link")
-                                               :handlers {:get get-users}
-                                               :nested [{:path ["/" :user-id]
-                                                         :model User
-                                                         :handlers {:get get-user
-                                                                    :put put-user
-                                                                    :delete delete-user}
-                                                         :nested [{:path "/raised_issues"
-                                                                   :model (vocab "raised-issues-link")
-                                                                   :handlers {:get get-issues-for-user
-                                                                              :post post-issue-for-user}}]}]}
-                                              {:path ["register-users"]
-                                               :model (vocab "register-users-link")
-                                               :handlers {:post post-user}}]}))
+(def routes {:path [""]
+             :model EntryPoint
+             :handlers {:get get-entrypoint}
+             :nested [{:path ["issues"]
+                       :model (vocab "get-issues-link")
+                       :handlers {:get get-issues}
+                       :nested [{:path ["/" :issue-id]
+                                 :model Issue
+                                 :handlers {:get get-issue
+                                            :put put-issue
+                                            :delete delete-issue}
+                                 :nested [{:path ["/users/" :user-id]
+                                           :model (vocab "raised-by-link")
+                                           :handlers {:get get-user-for-issue}}]}]}
+                      {:path ["users"]
+                       :model (vocab "get-users-link")
+                       :handlers {:get get-users}
+                       :nested [{:path ["/" :user-id]
+                                 :model User
+                                 :handlers {:get get-user
+                                            :put put-user
+                                            :delete delete-user}
+                                 :nested [{:path "/raised_issues"
+                                           :model (vocab "raised-issues-link")
+                                           :handlers {:get get-issues-for-user
+                                                      :post post-issue-for-user}}]}]}
+                      {:path ["register-users"]
+                       :model (vocab "register-users-link")
+                       :handlers {:post post-user}}]})
 
+
+(def stop-server (http-kit/run-server (http/middleware {:api API
+                                                        :routes routes
+                                                        :entrypoint-path "/"
+                                                        :documentation-path "/vocab"})
+                                      {:port 8080}))
 
 (comment
 
+  (bidi.bidi/match-route routes "issues")
+
+  (stop-server)
   (clojure.spec/check-asserts true)
 
   (do (mc/remove db "issues" {})

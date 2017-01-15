@@ -32,20 +32,21 @@
       vocab: the @vocab value for the context
       base:  the @base value for the context
       ns:    list of namespace aliases that will be added to the context"
-  [{:keys [vocab base ns]}]
-  (let [prefixes (->> (or ns [])
-                      (map (fn [ns] [(name ns) (lns/prefix-for-ns (name ns))]))
-                      (filter (fn [[ns uri]] (some? uri)))
-                      (into {}))
-        vocab (if (lns/default-ns?)
-                (or vocab (lns/default-ns))
-                vocab)]
-    (reset! *context*
-            (->> prefixes
-                 (merge {"@vocab" vocab
-                         "@base" base})
-                 (filter (fn [[k v]] (some? v)))
-                 (into {})))))
+  ([{:keys [vocab base ns]}]
+   (let [prefixes (->> (or ns [])
+                       (map (fn [ns] [(name ns) (lns/prefix-for-ns (name ns))]))
+                       (filter (fn [[ns uri]] (some? uri)))
+                       (into {}))
+         vocab (if (lns/default-ns?)
+                 (or vocab (lns/default-ns))
+                 vocab)]
+     (reset! *context*
+             (->> prefixes
+                  (merge {"@vocab" vocab
+                          "@base" base})
+                  (filter (fn [[k v]] (some? v)))
+                  (into {})))))
+  ([] @*context*))
 
 (s/def ::context boolean?)
 (s/fdef compact

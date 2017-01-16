@@ -35,16 +35,18 @@
                                   "title" "405 Method Not Allowed"
                                   "description" message})})
 
-(defn ->422 [message errors]
-  (if @*debug-errors*
-    {:status 422
-     :body (json/generate-string {"@context" (lns/hydra "")
-                                  "title" "422 Unprocessable Entity"
-                                  "description" (str errors)})}
-    {:status 422
-     :body (json/generate-string {"@context" (lns/hydra "")
-                                  "title" "422 Unprocessable Entity"
-                                  "description" message})}))
+(defn ->422
+  ([message errors]
+   (if @*debug-errors*
+     {:status 422
+      :body (json/generate-string {"@context" (lns/hydra "")
+                                   "title" "422 Unprocessable Entity"
+                                   "description" (str errors)})}
+     {:status 422
+      :body (json/generate-string {"@context" (lns/hydra "")
+                                   "title" "422 Unprocessable Entity"
+                                   "description" message})}))
+  ([message] (->422 message nil)))
 (defn exception->string [ex]
   (let [sw (StringWriter.)
         pw (PrintWriter. sw)]
@@ -202,6 +204,12 @@
   (-> (if (some? query-string) (url/query->map query-string) {})
       (clojure.walk/keywordize-keys)))
 
+(defn valid-params? [route-params params]
+  (->> params
+       (map (fn [[var-name {:keys [required] :or {required false}}]]
+              (or (not required) (some? (get route-params var-name)))))
+       (reduce (fn [acc next-value] (and acc next-value)))))
+
 (defn middleware [{:keys [entrypoint-path api routes documentation-path] :as context}]
   (let [routes (routing/process-routes routes)
         validations (schema/build-api-validations api)
@@ -211,25 +219,29 @@
       (log/debug (str "Processing request " request-method " :: " uri))
       (log/debug query-string)
       (log/debug body)
-      (let [params  (params-map query-string)
-            context (assoc context :params params)]
+      (let [request-params  (params-map query-string)
+            context (assoc context :request-params request-params)]
         (if (= uri documentation-path)
           (documentation-handler api)
           (let [route (string/replace-first uri entrypoint-path "")
-                handler-info (routing/match route)
-                context (assoc context :base-url (base-url request))]
+                handler-info (routing/match route)]
             (if (some? handler-info)
-              (let [{:keys [handlers route-params] :or {route-params {}}} handler-info
-                    route-params (merge route-params params)
+              (let [{:keys [handlers route-params params model]
+                     :or {route-params {} params {}}} handler-info
+                    context (-> context
+                                (assoc :base-url (base-url request))
+                                (assoc :model (routing/find-model model api)))
+                    route-params (merge route-params request-params)
                     handler (get handlers request-method)]
-                (if (some? handler)
-                  (condp = request-method
-                    :get    (get-handler request route-params handler context)
-                    :head   (head-handler request route-params handler context)
-                    :post   (post-handler request route-params handler context)
-                    :put    (put-handler request route-params handler context)
-                    :patch  (patch-handler request route-params handler context)
-                    :delete (delete-handler request route-params handler context)
-                    :else (->405 (str "Method " request-method " not supported")))
-                  (->405 (str "Method " request-method " not supported"))))
+                (cond
+                  (nil? handler)                            (->405 (str "Method " request-method " not supported"))
+                  (not (valid-params? route-params params)) (->422 "Invalid request parameters")
+                  :else (condp = request-method
+                          :get    (get-handler request route-params handler context)
+                          :head   (head-handler request route-params handler context)
+                          :post   (post-handler request route-params handler context)
+                          :put    (put-handler request route-params handler context)
+                          :patch  (patch-handler request route-params handler context)
+                          :delete (delete-handler request route-params handler context)
+                          :else (->405 (str "Method " request-method " not supported")))))
               (->404 "Cannot find the requested resource"))))))))

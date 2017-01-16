@@ -79,3 +79,29 @@
                                       :first 0
                                       :last 100})]
               (into {})))))
+
+(deftest supported-template-test
+  (spec-utils/check-symbol `payload/supported-template)
+  (is (= ["http://test.com/template-link"
+          {"@type" "http://www.w3.org/ns/hydra/core#IriTemplate",
+           "http://www.w3.org/ns/hydra/core#template" "/test/{id}{?q}",
+           "http://www.w3.org/ns/hydra/core#variableRepresentation" "BasicRepresentation",
+           "http://www.w3.org/ns/hydra/core#mapping" [{"@type" "http://www.w3.org/ns/hydra/core#IriTemplateMapping",
+                                                       "http://www.w3.org/ns/hydra/core#variable" "id",
+                                                       "http://www.w3.org/ns/hydra/core#property" {"@type" "http://www.w3.org/2000/01/rdf-schema#Property",
+                                                                                                   "http://www.w3.org/2000/01/rdf-schema#range" {"@id" "http://www.w3.org/2001/XMLSchema#string"}},
+                                                       "http://www.w3.org/ns/hydra/core#required" true}
+                                                      {"@type" "http://www.w3.org/ns/hydra/core#IriTemplateMapping",
+                                                       "http://www.w3.org/ns/hydra/core#variable" "q",
+                                                       "http://www.w3.org/ns/hydra/core#property" {"@type" "http://www.w3.org/2000/01/rdf-schema#Property",
+                                                                                                   "http://www.w3.org/2000/01/rdf-schema#range" {"@id" "http://www.w3.org/2001/XMLSchema#string"}},
+                                                       "http://www.w3.org/ns/hydra/core#required" false}]}]
+         (payload/supported-template "http://test.com/template-link"
+                                     {:template "/test/{id}{?q}"
+                                      :representation :basic
+                                      :mapping [{:variable :id
+                                                 :range (levanzo.namespaces/xsd "string")
+                                                 :required true}
+                                                {:variable :q
+                                                 :range (levanzo.namespaces/xsd "string")
+                                                 :required false}]}))))

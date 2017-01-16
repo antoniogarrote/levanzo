@@ -24,10 +24,16 @@
 (s/def ::nested (s/with-gen (s/coll-of ::route-input :gen-max 0)
                   #(tg/return [])))
 
+(s/def ::var-spec (s/keys :req-un [::hydra/range
+                                   ::hydra/required]))
+
+(s/def ::params (s/map-of keyword? ::var-spec))
+
 (s/def ::route-input (s/with-gen (s/keys :req-un [::path
                                                   ::model
                                                   ::handlers]
-                                         :opt-un [::nested])
+                                         :opt-un [::nested
+                                                  ::params])
                        #(tg/recursive-gen
                          (fn [g]
                            (tg/fmap (fn [[els nested]]
@@ -101,7 +107,7 @@
 
 
 (s/fdef link-for
-        :args (s/cat :model ::hydra/id
+        :args (s/cat :model (s/or :id ::hydra/id)
                      :link-args (s/* (s/or :keys keyword?
                                            :val any?)))
         :ret (s/or :id ::hydra/id
@@ -124,6 +130,7 @@
         :ret (s/keys :req-un [::route-params
                               ::path
                               ::model
+                              ::params
                               ::handlers]))
 (defn match
   "Matches a route to a set of handler information"
@@ -137,6 +144,27 @@
         (if (some? handler-info)
           (assoc handler-info :route-params (or route-params {}))
           nil))
+      nil)))
+
+(defn find-model [model api]
+  (let [model-uri (if (string? model)
+                    model
+                    (-> model :common-props ::hydra/id))]
+    (if (some? model-uri)
+      (->> api
+           :supported-classes
+           (map (fn [{:keys [common-props supported-properties] :as supported-class}]
+                  (if (= (::hydra/id common-props) model-uri)
+                    supported-class
+                    (let [found-property (->> supported-properties
+                                              (filter (fn [{:keys [common-props]}]
+                                                        (= (::hydra/id common-props) model-uri)))
+                                              first)]
+                      (if (some? found-property)
+                        found-property
+                        nil)))))
+           (filter some?)
+           first)
       nil)))
 
 (defn clear!

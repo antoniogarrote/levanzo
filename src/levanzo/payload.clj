@@ -249,3 +249,43 @@
                                                 (lns/hydra "next"))
                            (jsonld/link-if-some (add-param collection-id pagination-param previous)
                                                 (lns/hydra "previous")))])
+
+(s/def ::required boolean?)
+(s/def ::variable keyword?)
+(s/def ::range ::hydra/id)
+(s/def ::template string?)
+(s/def ::representation #{:basic :explicit})
+(s/def ::mapping (s/coll-of (s/keys :req-un [::variable
+                                             ::range
+                                             ::required])
+                            :min-count 1))
+(s/def ::iri-template (s/keys :req-un [::template
+                                       ::mapping]
+                              :opt-un [::representation]))
+
+(s/fdef supported-template
+        :args (s/cat :model ::uri-or-model-args
+                     :iri-template ::iri-template)
+        :ret (s/tuple
+              ::hydra/id
+              (s/and map?
+                     #(= (get % "@type") (lns/hydra "IriTemplate"))
+                     #(some? (get % (lns/hydra "template")))
+                     #(some? (get % (lns/hydra "variableRepresentation")))
+                     #(some? (get % (lns/hydra "mapping"))))))
+(defn supported-template
+  "Generates a IRI template for a TemplatedLink property"
+  [model {:keys [template representation mapping] :or {representation :basic} :as iri-template}]
+  (s/assert ::uri-or-model-args model)
+  (s/assert ::iri-template iri-template)
+  [(lns/resolve (uri-or-model model))
+   {"@type" (lns/hydra "IriTemplate")
+    (lns/hydra "template") template
+    (lns/hydra "variableRepresentation") (if (= :basic representation) "BasicRepresentation" "ExplicitRepresentation")
+    (lns/hydra "mapping") (->> mapping
+                               (mapv (fn [{:keys [variable range required]}]
+                                       {"@type" (lns/hydra "IriTemplateMapping")
+                                        (lns/hydra "variable") (name variable)
+                                        (lns/hydra "property") {"@type" (lns/rdfs "Property")
+                                                                (lns/rdfs "range"){"@id" range}}
+                                        (lns/hydra "required") required})))}])

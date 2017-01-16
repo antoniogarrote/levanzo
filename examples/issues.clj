@@ -140,6 +140,11 @@
                                 ::hydra/description "Creates a new User entity"
                                 ::hydra/range (vocab "User")}))
 
+(def search-users (hydra/templated-link {::hydra/id (vocab "searchUsesr")
+                                         ::hydra/title "search_users"
+                                         ::hydra/description "Searches registered users by name"
+                                         ::hydra/range (vocab "User")}))
+
 (def EntryPoint (hydra/class {::hydra/id (vocab "EntryPoint")
                               ::hydra/title "EntryPoint"
                               ::hydra/description "The main entry point of the API"
@@ -155,7 +160,11 @@
                                                                                        ::hydra/property register-user
                                                                                        ::hydra/operations
                                                                                        [(hydra/post-operation {::hydra/expects (vocab "User")
-                                                                                                               ::hydra/returns (vocab "User")})]})]
+                                                                                                               ::hydra/returns (vocab "User")})]})
+                                                            (hydra/supported-property {::hydra/id (vocab "search-users-link")
+                                                                                       ::hydra/property search-users
+                                                                                       ::hydra/operations
+                                                                                       [(hydra/get-operation {::hydra/returns (vocab "User")})]})]
                               ::hydra/operations [(hydra/get-operation {::hydra/returns (vocab "EntryPoint")
                                                                         ::hydra/description "The APIs main entry point."})]}))
 
@@ -212,7 +221,6 @@
                                     (mquery/skip (* (dec page) page-size))
                                     (mquery/limit page-size))
                                   (map bson->json))]
-                   (prn users)
                    (-> (payload/json-ld (payload/id (vocab "get-users-link"))
                                         (payload/type UsersCollection)
                                         (payload/title "Users Collection")
@@ -224,6 +232,25 @@
                                                                :next (inc page)
                                                                :previous (if (> page 1) (dec page) nil)}))
                        (jsonld/compact-json-ld context)))))
+
+(def get-search-users (fn [{:keys [page name] :or {page "1"} :as args} body request]
+                        (let [page (Integer/parseInt page)
+                              users (->> (mquery/with-collection db "users"
+                                           (mquery/find {:name {mo/$regex (str ".*" (:name args) ".*")}})
+                                           (mquery/skip (* (dec page) page-size))
+                                           (mquery/limit page-size))
+                                         (map bson->json))]
+                          (-> (payload/json-ld (payload/id (vocab "search-users-link"))
+                                               (payload/type UsersCollection)
+                                               (payload/title "Users found")
+                                               (payload/members users)
+                                               (payload/total-items (count users))
+                                               (payload/partial-view (payload/link-for (vocab "search-users-link") {})
+                                                                     {:current page
+                                                                      :pagination-param "page"
+                                                                      :next (inc page)
+                                                                      :previous (if (> page 1) (dec page) nil)}))
+                              (jsonld/compact-json-ld context)))))
 
 (def get-user (fn [args body request]
                 (->> (payload/link-for User args)
@@ -310,15 +337,24 @@
                            (payload/supported-property "hydra:title" "Issues API Entry Point")
                            (payload/supported-link (vocab "get-issues-link"))
                            (payload/supported-link (vocab "get-users-link"))
-                           (payload/supported-link (vocab "register-users-link")))
+                           (payload/supported-link (vocab "register-users-link"))
+                           (payload/supported-template (vocab "search-users-link")
+                                                       {:template "/search-users{?name}"
+                                                        :representation :basic
+                                                        :mapping [{:variable :name
+                                                                   :range (xsd "string")
+                                                                   :require true}]}))
                           (payload/compact))))
 
 (levanzo.routing/clear!)
+
 (def routes {:path [""]
              :model EntryPoint
              :handlers {:get get-entrypoint}
              :nested [{:path ["issues"]
                        :model (vocab "get-issues-link")
+                       :params {:page {:range (xsd "integer")
+                                       :required false}}
                        :handlers {:get get-issues}
                        :nested [{:path ["/" :issue-id]
                                  :model Issue
@@ -330,6 +366,8 @@
                                            :handlers {:get get-user-for-issue}}]}]}
                       {:path ["users"]
                        :model (vocab "get-users-link")
+                       :params {:page {:range (xsd "integer")
+                                       :required false}}
                        :handlers {:get get-users}
                        :nested [{:path ["/" :user-id]
                                  :model User
@@ -342,7 +380,14 @@
                                                       :post post-issue-for-user}}]}]}
                       {:path ["register-users"]
                        :model (vocab "register-users-link")
-                       :handlers {:post post-user}}]})
+                       :handlers {:post post-user}}
+                      {:path ["search-users"]
+                       :params {:page {:range (xsd "integer")
+                                       :required false}
+                                :name {:range (xsd "string")
+                                       :required true}}
+                       :model (vocab "search-users-link")
+                       :handlers {:get get-search-users}}]})
 (hydra/->jsonld API)
 
 (def stop-server (http-kit/run-server (http/middleware {:api API

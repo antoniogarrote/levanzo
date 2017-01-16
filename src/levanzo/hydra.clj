@@ -197,7 +197,7 @@
 (s/def ::is-template boolean?)
 
 
-(s/def ::rdf-props (s/keys ::domain ::range))
+(s/def ::rdf-props (s/keys :opt [::domain ::range]))
 
 (defrecord Property [uri
                      is-link

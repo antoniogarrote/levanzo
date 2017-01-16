@@ -8,7 +8,8 @@
             [clojure.string :as string]
             [clojure.spec.test :as stest]
             [clojure.spec.gen :as gen]
-            [clojure.test.check.generators :as tg]))
+            [clojure.test.check.generators :as tg]
+            [taoensso.timbre :as log]))
 
 ;; context in which a validation must be performed: reading (GET) , write (POST), update (PUT/PATCH)
 (s/def ::mode #{:read :write :update})
@@ -263,13 +264,17 @@
   [api supported-property]
   (let [property (:property supported-property)
         property-validator (parse-property api property)]
-
+    (log/debug "Validating property " (-> property :common-props ::hydra/id))
     (with-access-mode-validation supported-property
       (fn [mode api-validations jsonld]
+        (log/debug "Validating plain property " (-> property :common-props ::hydra/id))
         (let [property-id (-> property :common-props ::hydra/id)
               is-optional (not (-> supported-property :property-props ::hydra/required))
               values (get jsonld property-id)
               value (first values)]
+          (log/debug {:is-optional is-optional
+                      :values (count values)
+                      :value value})
           (cond
             (= 0 (count values))  (if is-optional
                                     nil
@@ -306,6 +311,7 @@
   [api api-class]
   (let [validations (map #(parse-supported-property api %) (-> api-class :supported-properties))]
     (fn [mode api-validations jsonld]
+      (log/debug "Validating " (-> api-validations :common-props ::hydra/id) ", " (count validations) " validations")
       (and (map? jsonld)
            (let [errors (->> validations
                              (map (fn [validation]

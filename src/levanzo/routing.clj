@@ -146,27 +146,6 @@
           nil))
       nil)))
 
-(defn find-model [model api]
-  (let [model-uri (if (string? model)
-                    model
-                    (-> model :common-props ::hydra/id))]
-    (if (some? model-uri)
-      (->> api
-           :supported-classes
-           (map (fn [{:keys [common-props supported-properties] :as supported-class}]
-                  (if (= (::hydra/id common-props) model-uri)
-                    supported-class
-                    (let [found-property (->> supported-properties
-                                              (filter (fn [{:keys [common-props]}]
-                                                        (= (::hydra/id common-props) model-uri)))
-                                              first)]
-                      (if (some? found-property)
-                        found-property
-                        nil)))))
-           (filter some?)
-           first)
-      nil)))
-
 (defn clear!
   "Cleans the routes information"
   []

@@ -43,9 +43,11 @@
                         ::hydra/title "User"
                         ::hydra/description "A User represents a person registered in the system."
                         ::hydra/supported-properties [(hydra/supported-property {::hydra/property name})
-                                                      (hydra/supported-property {::hydra/property email})
+                                                      (hydra/supported-property {::hydra/property email
+                                                                                 ::hydra/required true})
                                                       (hydra/supported-property {::hydra/property password
-                                                                                 ::hydra/writeonly true})
+                                                                                 ::hydra/writeonly true
+                                                                                 ::hydra/required true})
                                                       (hydra/supported-property {::hydra/id (vocab "raised-issues-link")
                                                                                  ::hydra/property raised-issues
                                                                                  ::hydra/readonly true
@@ -101,7 +103,10 @@
                                                                                   ::hydra/readonly true
                                                                                   ::hydra/operations
                                                                                   [(hydra/get-operation {::hydra/returns (vocab "User")
-                                                                                                         ::hydra/description "Retrieves a User entity"})]})]
+                                                                                                         ::hydra/description "Retrieves a User entity"})
+                                                                                   (hydra/post-operation {::hydra/expects (vocab "Issue")
+                                                                                                          ::hydra/returns (vocab "Issue")
+                                                                                                          ::hydra/description "Creates a new issue for a user"})]})]
                          ::hydra/operations [(hydra/get-operation {::hydra/returns (vocab "Issue")
                                                                    ::hydra/id (vocab "issue_retrieve")
                                                                    ::hydra/description "Retrieves a Issue entity"})

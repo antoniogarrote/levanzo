@@ -23,6 +23,22 @@
 (def *validate-requests* (atom true))
 (defn set-validate-requests! [enabled] (swap! *validate-requests* (fn [_] enabled)))
 
+(defn find-validation [validation-type validations-map method model]
+  (log/debug "Finding validations in model " (-> model :common-props ::hydra/id))
+  (->> model
+       :operations
+       (map #(if (and (= (-> method name string/upper-case) (-> % :operation-props ::hydra/method))
+                      (some? (-> % :operation-props validation-type)))
+               (let [validation-class-id (-> % :operation-props validation-type)]
+                 (get validations-map validation-class-id))
+               nil))
+       first))
+(defn find-expects-validation [validations-map method model]
+  (find-validation ::hydra/expects validations-map method model))
+
+(defn find-returns-validation [validations-map method model]
+  (find-validation ::hydra/returns validations-map method model))
+
 (defn ->404 [message]
   {:status 404
    :body   (json/generate-string {"@context" (lns/hydra "")
@@ -67,7 +83,7 @@
   (if (some? body)
     (let [json (if (map? body)
                  body
-                 (json/parse-stream body))]
+                 (json/parse-string (slurp body)))]
       (payload/expand json))
     nil))
 
@@ -86,36 +102,31 @@
           (assoc :headers headers)))
     response-map))
 
-(defn validate-response [{:keys [body] :as response} validations-map mode]
-  (if (and @*validate-responses* (not (nil? mode)))
-    (let [types (get body "@type")
-          predicates (->> types
-                          (map #(get validations-map % []))
-                          flatten)
-          errors (->> predicates
-                      (map (fn [predicate] (predicate mode validations-map body)))
-                      (filter some?))]
+(defn validate-response [{:keys [body] :as response} validations-map mode method model]
+  (if (and @*validate-responses* (and (not (nil? mode))
+                                      (not (nil? model))))
+    (let [_ (log/debug "Validating response for method " method)
+          predicate (find-returns-validation validations-map method model)
+          _ (log/debug "Found validation predicates " (some? predicate))
+          errors (predicate mode validations-map body)]
       (if (empty? errors)
         response
         (->500 (Exception. (str "Invalid response payload " errors)))))
     response))
 
-(defn validate-request [{:keys [body] :as request} validations-map mode continuation]
+(defn validate-request [{:keys [body] :as request} validations-map mode method model continuation]
   (let [body (request->jsonld request)]
     (if (and @*validate-requests* (some? body))
-      (let [types (get body "@type")
-            predicates (->> types
-                            (map #(get validations-map % []))
-                            flatten)
-            errors (->> predicates
-                        (map (fn [predicate] (predicate mode validations-map body)))
-                        (filter some?))]
+      (let [_ (log/debug "Validating request for method " method)
+            predicate (find-expects-validation validations-map method model)
+            _ (log/debug "Found validation predicates " (some? predicate))
+            errors (predicate mode validations-map body)]
         (if (empty? errors)
           (continuation (assoc request :body body))
           (->500 (Exception. (str "Invalid response payload " errors)))))
       (continuation (assoc request :body body)))))
 
-(defn process-response [response mode {:keys [validations-map] :as context}]
+(defn process-response [response mode {:keys [validations-map method model] :as context}]
   (let [response-map (if (or (some? (:body response))
                              (some? (:status response)))
                        response
@@ -124,7 +135,7 @@
     (-> response-map
         (assoc :status (:status response-map 200))
         (assoc :headers (:headers response-map {}))
-        (validate-response validations-map mode)
+        (validate-response validations-map mode method model)
         (response->jsonld context)
         (assoc :status status))))
 
@@ -135,11 +146,12 @@
                             request)]
       (process-response response :read context))
     (catch Exception ex
+      (log/error ex)
       (->500 ex))))
 
-(defn post-handler [request route-params handler {:keys [validations-map] :as context}]
+(defn post-handler [request route-params handler {:keys [validations-map model] :as context}]
   (try
-    (validate-request request validations-map :write
+    (validate-request request validations-map :write :post model
                       (fn [{:keys [body] :as request}]
                         (let [response (handler route-params
                                                 body
@@ -152,9 +164,9 @@
     (catch Exception ex
       (->500 ex))))
 
-(defn put-handler [request route-params handler {:keys [api validations-map] :as context}]
+(defn put-handler [request route-params handler {:keys [api validations-map model] :as context}]
   (try
-    (validate-request request validations-map :update
+    (validate-request request validations-map :update :put model
                       (fn [{:keys [body] :as request}]
                         (let [response (handler route-params
                                                 body
@@ -163,9 +175,9 @@
     (catch Exception ex
       (->500 ex))))
 
-(defn patch-handler [request route-params handler {:keys [api validations-map] :as context}]
+(defn patch-handler [request route-params handler {:keys [api validations-map model] :as context}]
   (try
-    (validate-request request validations-map :update
+    (validate-request request validations-map :update :patch model
                       (fn [{:keys [body] :as request}]
                         (let [response (handler route-params
                                                 body
@@ -205,20 +217,43 @@
       (clojure.walk/keywordize-keys)))
 
 (defn valid-params? [route-params params]
+  (log/debug "Validating params " route-params)
   (->> params
        (map (fn [[var-name {:keys [required] :or {required false}}]]
+              (log/debug "   " var-name " is a required param : " required)
               (or (not required) (some? (get route-params var-name)))))
-       (reduce (fn [acc next-value] (and acc next-value)))))
+       (reduce (fn [acc next-value] (and acc next-value)) true)))
+
+(defn find-model [model api]
+  (let [model-uri (if (string? model)
+                    model
+                    (-> model :common-props ::hydra/id))]
+    (if (some? model-uri)
+      (->> api
+           :supported-classes
+           (map (fn [{:keys [common-props supported-properties] :as supported-class}]
+                  (if (= (::hydra/id common-props) model-uri)
+                    supported-class
+                    (let [found-property (->> supported-properties
+                                              (filter (fn [{:keys [common-props]}]
+                                                        (= (::hydra/id common-props) model-uri)))
+                                              first)]
+                      (if (some? found-property)
+                        found-property
+                        nil)))))
+           (filter some?)
+           first)
+      nil)))
 
 (defn middleware [{:keys [entrypoint-path api routes documentation-path] :as context}]
   (let [routes (routing/process-routes routes)
-        validations (schema/build-api-validations api)
-        context (merge context {:routes routes :validations validations})]
+        validations-map (schema/build-api-validations api)
+        context (merge context {:routes routes :validations-map validations-map})]
 
     (fn [{:keys [uri body request-method query-string] :as request}]
       (log/debug (str "Processing request " request-method " :: " uri))
-      (log/debug query-string)
-      (log/debug body)
+      (log/debug "Query string: " query-string)
+      (log/debug "Body: "body)
       (let [request-params  (params-map query-string)
             context (assoc context :request-params request-params)]
         (if (= uri documentation-path)
@@ -230,9 +265,11 @@
                      :or {route-params {} params {}}} handler-info
                     context (-> context
                                 (assoc :base-url (base-url request))
-                                (assoc :model (routing/find-model model api)))
+                                (assoc :model (find-model model api))
+                                (assoc :method request-method))
                     route-params (merge route-params request-params)
                     handler (get handlers request-method)]
+                (log/debug (str "Model "(-> model :common-props ::hydra/id) " :: " (get context :model)))
                 (cond
                   (nil? handler)                            (->405 (str "Method " request-method " not supported"))
                   (not (valid-params? route-params params)) (->422 "Invalid request parameters")

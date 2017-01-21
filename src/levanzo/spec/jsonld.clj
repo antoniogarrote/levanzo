@@ -20,27 +20,39 @@
                                                                 :min-count 4
                                                                 :max-count 4)))))
 
+(def path-component-regex #"^([a-zA-ZA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+$")
 (s/def ::path-component (s/with-gen (s/and string?
-                                           #(re-matches #"^([a-zA-ZA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+$" %))
+                                           #(re-matches path-component-regex %))
                           #(tg/fmap (fn [s] (apply str (take 5 s)))
-                                    tg/string-ascii)))
+                                    tg/string-alphanumeric)))
 
 ;; URI path definitions
 (s/def ::relative-path (s/with-gen (s/and string?
-                                          #(re-matches #"^([a-zA-ZA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+([\/a-zA-ZA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})*$" %))
-                         #(tg/fmap (fn [parts] (let [parts (if (= "" (last parts))
-                                                            (drop-last parts)
-                                                            parts)]
-                                                (string/replace (string/join "/" (flatten parts))
-                                                                #"//"
-                                                                "/")))
-                                   (s/gen (s/tuple (s/coll-of ::path-component :min-count 1 :max-count 10)
-                                                   #{"/" ""})))))
+                                          #(not (re-matches #"^(\/|\#).*$" %))
+                                          (fn [path]
+                                            (let [path (-> (string/split path #"\?") first)
+                                                  parts (string/split path #"\/")]
+                                              (->> parts
+                                                   (mapv #(re-matches path-component-regex %))
+                                                   (reduce (fn [acc v] (and acc v)) true)))))
+                         #(tg/fmap (fn [parts] (string/join "/" parts))
+                                   (s/gen (s/coll-of ::path-component :min-count 1 :max-count 10)))))
+
+
 
 (s/def ::absolute-path (s/with-gen (s/and string?
-                                          #(re-matches #"^\/|\/([a-zA-ZA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})+([\/a-zA-ZA-Z0-9-._~!$&'()*+,;=:]|%[0-9A-F]{2})*$" %))
+                                          #(re-matches #"^(\/|\#).*$" %)
+                                          (fn [path]
+                                            (let [path (-> (string/split path #"\?") first)
+                                                  path (string/replace-first path "#" "")
+                                                  parts (string/split path #"\/")]
+                                              (->> parts
+                                                   (drop 1)
+                                                   (mapv #(re-matches path-component-regex %))
+                                                   (reduce (fn [acc v] (and acc v)) true)))))
                          #(tg/fmap (fn [relative-path] (str "/" relative-path))
                                    (s/gen ::relative-path))))
+
 
 (s/def ::path-variable (s/with-gen keyword?
                          #(s/gen #{:user_id :ticket_id :order_id :event_id})))
@@ -69,8 +81,6 @@
                :curie ::curie))
 
 (s/def ::path (s/or
-               :empty-path    (s/with-gen #(= % "")
-                                #(tg/return ""))
                :relative-path ::relative-path
                :absolute-path ::absolute-path))
 
@@ -119,7 +129,8 @@
                                         ret))
                                     (s/gen ::jsonld-literal-value))))
 
-(s/def ::link (s/map-of #{"@id"} ::uri))
+(s/def ::link (s/map-of #{"@id"} (s/or :id ::uri
+                                       :path ::path)))
 (s/def ::expanded-jsonld (s/merge (s/every (s/or :id (s/tuple #{"@id"} ::uri)
                                                  :type (s/tuple #{"@type"} (s/coll-of ::uri :gen-max 2 :min-count 1))
                                                  :literal (s/tuple ::uri (s/coll-of ::jsonld-literal :gen-max 2 :min-count 1))

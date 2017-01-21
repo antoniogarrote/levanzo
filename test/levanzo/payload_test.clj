@@ -22,7 +22,9 @@
   (spec-utils/check-symbol `payload/compact)
   (is (= {"test" {"@id" "test/1"},
           "@context" {"@base" "http://test.com/",
-                      "@vocab" "http://test.com/vocab#"}}
+                      "@vocab" "http://test.com/vocab#"
+                      "hydra" "http://www.w3.org/ns/hydra/core#",
+                      "rdfs" "http://www.w3.org/2000/01/rdf-schema#"}}
        (with-bindings {#'payload/*context* (atom {"@base" "http://test.com/"
                                                   "@vocab" "http://test.com/vocab#"})}
          (payload/compact {"http://test.com/vocab#test" {"@id" "http://test.com/test/1"}}))))
@@ -44,14 +46,13 @@
   (stest/unstrument))
 
 (deftest jsonld-test
-  (spec-utils/check-symbol `payload/json-ld)
+  (spec-utils/check-symbol `payload/jsonld)
   (with-bindings {#'payload/*context* (atom {"test" "http://test.com/"})}
     (is (= {"@id" "test1"
             "http://test.com/hey" [{"@value" 3}]}
-           (payload/json-ld
+           (payload/jsonld
             ["@id" "test1"]
-            ["test:hey" 3])
-           ))))
+            ["test:hey" 3])))))
 
 (deftest supported-property-test
   (spec-utils/check-symbol `payload/supported-property))
@@ -62,23 +63,25 @@
   (stest/unstrument))
 
 (deftest partial-view-test
+  (stest/instrument `levanzo.routing/link-for {:stub #{`levanzo.routing/link-for}})
   (spec-utils/check-symbol `payload/partial-view)
-  (is (=
-       {"http://www.w3.org/ns/hydra/core#view"
-        {"@id" "http://test.com/Collection?p=3",
-         "@type" "http://www.w3.org/ns/hydra/core#PartialCollectionView",
-         "http://www.w3.org/ns/hydra/core#first" {"@id" "http://test.com/Collection?p=0"},
-         "http://www.w3.org/ns/hydra/core#last" {"@id" "http://test.com/Collection?p=100"},
-         "http://www.w3.org/ns/hydra/core#next" {"@id" "http://test.com/Collection?p=4"},
-         "http://www.w3.org/ns/hydra/core#previous" {"@id" "http://test.com/Collection?p=2"}}}
-       (->> [(payload/partial-view "http://test.com/Collection"
-                                     {:current 3
-                                      :next 4
-                                      :previous 2
-                                      :pagination-param "p"
-                                      :first 0
-                                      :last 100})]
-              (into {})))))
+  (let [view (->> [(payload/partial-view  {:model "http://test.com/Collection"
+                                           :current 3
+                                           :next 4
+                                           :previous 2
+                                           :pagination-param "p"
+                                           :first 0
+                                           :last 100})]
+                  (into {}))]
+    (is (some? (get view "http://www.w3.org/ns/hydra/core#view")))
+    (is (= ["@id" "@type"
+            "http://www.w3.org/ns/hydra/core#first"
+            "http://www.w3.org/ns/hydra/core#last"
+            "http://www.w3.org/ns/hydra/core#next"
+            "http://www.w3.org/ns/hydra/core#previous"]
+           (keys (get view "http://www.w3.org/ns/hydra/core#view"))))
+    (stest/unstrument)))
+
 
 (deftest supported-template-test
   (spec-utils/check-symbol `payload/supported-template)
@@ -96,8 +99,8 @@
                                                        "http://www.w3.org/ns/hydra/core#property" {"@type" "http://www.w3.org/2000/01/rdf-schema#Property",
                                                                                                    "http://www.w3.org/2000/01/rdf-schema#range" {"@id" "http://www.w3.org/2001/XMLSchema#string"}},
                                                        "http://www.w3.org/ns/hydra/core#required" false}]}]
-         (payload/supported-template "http://test.com/template-link"
-                                     {:template "/test/{id}{?q}"
+         (payload/supported-template {:property "http://test.com/template-link"
+                                      :template "/test/{id}{?q}"
                                       :representation :basic
                                       :mapping [{:variable :id
                                                  :range (levanzo.namespaces/xsd "string")
@@ -105,3 +108,22 @@
                                                 {:variable :q
                                                  :range (levanzo.namespaces/xsd "string")
                                                  :required false}]}))))
+
+
+(deftest filter-triples
+  (let [triples (->> (payload/jsonld
+                      ["@id" "http://test.com/1"]
+                      ["hydra:title" "test"]
+                      ["hydra:description" "description"])
+                     payload/->triples)]
+    (is (= 1 (count (payload/filter-triples {:s nil
+                                             :p {"@id" (lns/hydra "title")}
+                                             :o nil}
+                                            triples))))
+    (is (= [{:s {"@id" "http://test.com/1"},
+             :p {"@id" "http://www.w3.org/ns/hydra/core#title"},
+             :o (payload/expand-literal "test")}]
+           (payload/fill-pattern {:s nil
+                                  :p {"@id" (lns/hydra "title")}
+                                  :o nil}
+                                 triples)))))

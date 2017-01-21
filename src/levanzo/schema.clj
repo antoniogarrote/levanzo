@@ -191,7 +191,7 @@
         :fn (s/and
              #(let [readonly  (-> % :args :supported-property :property-props ::hydra/readonly)
                     writeonly(-> % :args :supported-property :property-props ::hydra/writeonly)
-                    property (-> % :args :supported-property :property :common-props ::hydra/id)
+                    property (last (-> % :args :supported-property :property :common-props ::hydra/id))
                     required (-> % :args :supported-property :property-props ::hydra/required)
                     predicate (-> % :ret)
                     mode (cond
@@ -247,7 +247,7 @@
         :fn (s/and
              #(let [readonly  (-> % :args :supported-property :property-props ::hydra/readonly)
                     writeonly(-> % :args :supported-property :property-props ::hydra/writeonly)
-                    property  (-> % :args :supported-property :property :common-props ::hydra/id)
+                    property  (last (-> % :args :supported-property :property :common-props ::hydra/id))
                     required  (-> % :args :supported-property :property-props ::hydra/required)
                     predicate (-> % :ret)
                     mode (cond
@@ -311,7 +311,7 @@
   [api api-class]
   (let [validations (map #(parse-supported-property api %) (-> api-class :supported-properties))]
     (fn [mode api-validations jsonld]
-      (log/debug "Validating " (-> api-validations :common-props ::hydra/id) ", " (count validations) " validations")
+      (log/debug "Validating " (-> api-class :common-props ::hydra/id) ", mode " mode " and " (count validations) " validations")
       (and (map? jsonld)
            (let [errors (->> validations
                              (map (fn [validation]

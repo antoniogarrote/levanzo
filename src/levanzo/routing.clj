@@ -9,6 +9,8 @@
             [clojure.test.check.generators :as tg]))
 
 (s/def ::path (s/or
+               :empty-path    (s/with-gen #(= % "")
+                                #(tg/return ""))
                :simple-path ::jsonld-spec/path
                :complex-path (s/coll-of (s/or :path ::jsonld-spec/path
                                               :var  keyword?))))
@@ -72,15 +74,10 @@
 (def ^:dynamic *routes-register* (atom {}))
 (def ^:dynamic *routes* (atom []))
 
-(defn model-or-uri [model]
-  (if (string? model)
-    (keyword model)
-    (-> model :common-props ::hydra/id keyword)))
-
 (defn process-routes* [routes]
   (mapv (fn [route]
           (let [{:keys [path model nested]} route
-                model (model-or-uri model)]
+                model (keyword (hydra/model-or-uri model))]
             (swap! *routes-register* (fn [acc] (assoc acc model route)))
             (if (or (nil? nested) (empty? nested))
               (let [leafed (leaf path model)]
@@ -115,12 +112,17 @@
 (defn link-for
   "Mints a link for a provided set of routes, model URI and args "
   [model & args]
-  (let [args (concat [@*routes* (keyword (model-or-uri model))] args)]
-    (if (some? (get @*routes-register* (keyword (model-or-uri model))))
+  (let [args (concat [@*routes* (keyword (hydra/model-or-uri model))] args)]
+    (if (some? (get @*routes-register* (keyword (hydra/model-or-uri model))))
       (try (apply bidi/path-for args)
            (catch Exception ex
-             (throw (Exception. (str "Error generating link for " (model-or-uri model)) ex))))
-      (throw (throw (Exception. (str "Unknown model URI " (model-or-uri model))))))))
+             (throw (Exception. (str "Error generating link for " (hydra/model-or-uri model)) ex))))
+      (throw (throw (Exception. (str "Unknown model URI " (hydra/model-or-uri model))))))))
+
+(defn info-for
+  "Generates information about a route"
+  [model]
+  (get @*routes-register* (keyword (hydra/model-or-uri model))))
 
 
 (s/def ::route-params (s/map-of keyword? any?))
@@ -144,7 +146,7 @@
         (if (some? handler-info)
           (assoc handler-info :route-params (or route-params {}))
           nil))
-      nil)))
+     nil)))
 
 (defn clear!
   "Cleans the routes information"

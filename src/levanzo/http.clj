@@ -110,8 +110,12 @@
           _ (log/debug "Found validation predicates " (some? predicate))
           errors (predicate mode validations-map body)]
       (if (empty? errors)
-        response
-        (->500 (Exception. (str "Invalid response payload " errors)))))
+        (do
+          (log/debug "No validation errors found in response")
+          response)
+        (do
+          (log/error errors)
+          (->500 (Exception. (str "Invalid response payload " errors))))))
     response))
 
 (defn validate-request [{:keys [body] :as request} validations-map mode method model continuation]
@@ -121,9 +125,12 @@
             predicate (find-expects-validation validations-map method model)
             _ (log/debug "Found validation predicates " (some? predicate))
             errors (predicate mode validations-map body)]
+        (log/debug "Request valid? " (empty? errors))
         (if (empty? errors)
           (continuation (assoc request :body body))
-          (->500 (Exception. (str "Invalid response payload " errors)))))
+          (do
+            (log/error errors)
+            (->500 (Exception. (str "Invalid response payload " errors))))))
       (continuation (assoc request :body body)))))
 
 (defn process-response [response mode {:keys [validations-map method model] :as context}]

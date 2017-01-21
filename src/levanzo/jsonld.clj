@@ -97,3 +97,10 @@
 
 (defn compact-json-ld [json-ld context]
   (java->clj (JsonLdProcessor/compact json-ld context (JsonLdOptions.))))
+
+(defn triples
+  ([json-ld]
+   (get (java->clj (JsonLdProcessor/toRDF json-ld (JsonLdOptions.))) "@default")))
+
+(defn normalize-json-ld [json-ld]
+  (JsonLdProcessor/normalize json-ld (JsonLdOptions.)))

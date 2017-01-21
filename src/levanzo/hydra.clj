@@ -16,7 +16,8 @@
 ;; Common JSON-LD options
 
 ;; A JSON-LD @id for a model element
-(s/def ::id ::jsonld-spec/uri)
+(s/def ::id (s/or :uri ::jsonld-spec/uri
+                  :path ::jsonld-spec/path))
 ;; A JSON-LD @type for a model element
 (s/def ::type ::jsonld-spec/uri)
 ;; Hydra title for a model element
@@ -660,7 +661,7 @@
              #(not (empty?
                     (filter (fn [[type supported-class-or-collection]]
                               (= (-> supported-class-or-collection :common-props ::id)
-                                 (-> % :ret :api-props ::entrypoint-class)))
+                                 [:uri (-> % :ret :api-props ::entrypoint-class)]))
                             (-> % :args :api-args ::supported-classes))))))
 (defn api
   "Defines a Hydra ApiDocumentation element"
@@ -690,9 +691,34 @@
                     class-id)))
        first))
 
+(defn find-supported-property
+  "Finds a supported property in the API by ID"
+  [api supported-property-id]
+  (-> api
+      :supported-classes
+      (map #(:supported-properties %))
+      flatten
+      (filter #(= (get-in % [:common-props ::id])))
+      first))
 
 (defn find-class-operations
   "Finds a class in the API by ID"
   [api class-id]
   (let [class (find-class api class-id)]
     (-> class :operations)))
+
+
+(defn model-or-uri [model]
+  (if (string? model)
+    model
+    (-> model :common-props ::id)))
+
+(defn find-model [api uri]
+  (or (find-class api uri)
+      (find-supported-property api uri)))
+
+(defn class-model? [model]
+  (= (:uri model) (resolve "hydra:Class")))
+
+(defn supported-property? [model]
+  (= (:uri model) (resolve "hydra:SupportedProperty")))

@@ -11,7 +11,9 @@
 (defmacro define-rdf-ns [ns url]
   `(do
      (levanzo.namespaces/register (name '~ns) ~url)
-     (intern 'levanzo.namespaces '~ns (fn [& x#] (str ~url (or (first x#) ""))))))
+     ;(intern 'levanzo.namespaces '~ns (fn [& x#] (str ~url (or (first x#) ""))))
+     (def ~ns (fn [& x#] (str ~url (or (first x#) ""))))))
+
 
 (define-rdf-ns lvz "http://levanzo.org/vocab#")
 (define-rdf-ns rdf "http://www.w3.org/1999/02/22-rdf-syntax-ns#")

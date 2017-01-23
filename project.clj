@@ -4,6 +4,7 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :monkeypatch-clojure-test false
+  :source-paths ["src" "examples"]
   :dependencies [[org.clojure/clojure "1.9.0-alpha14"]
                  [bidi "2.0.16"]
                  [commons-validator "1.5.1"]

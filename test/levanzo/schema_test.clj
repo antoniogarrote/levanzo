@@ -238,9 +238,6 @@
         (doseq [instance (gen/sample (make-valid-payload-gen mode klass nil) 10)]
           (let [errors ((schema/parse-supported-class {} klass) mode {} instance)
                 valid (nil? errors)]
-            (when (not valid)
-              (prn instance)
-              (prn errors))
             (is valid)))))))
 
 (deftest parse-supported-class-api-test
@@ -253,9 +250,6 @@
             (let [validation (get validations-map (-> klass :common-props ::hydra/id))
                   errors (validation mode validations-map instance)
                   valid (nil? errors)]
-              (when (not valid)
-                (prn instance)
-                (prn errors))
               (is valid))))))))
 
 (deftest parse-plain-property-test

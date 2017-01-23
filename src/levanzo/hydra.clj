@@ -462,9 +462,9 @@
                    ::operations]))
 
 (s/def ::class-args (s/keys :req [::id
-                                  ::operations
                                   ::supported-properties]
-                            :opt [::type
+                            :opt [::operations
+                                  ::type
                                   ::title
                                   ::description]))
 
@@ -497,7 +497,10 @@
                      :levanzo.hydra/supported-properties
                      :levanzo.hydra/type
                      :levanzo.hydra/title
-                     :levanzo.hydra/description]}]
+                     :levanzo.hydra/description]
+              :or {operations []}
+              :as args}]
+  (s/assert ::class-args args)
   (->SupportedClass (resolve "hydra:Class")
                     (clean-nils {::id id
                                  ::title title
@@ -521,11 +524,11 @@
                    ::operations]))
 
 (s/def ::collection-args (s/keys :req [::id
-                                       ::operations
                                        ::is-paginated
                                        ::member-class]
                                  :un [::type
                                       ::title
+                                      ::operations
                                       ::description]))
 
 (defrecord Collection [uri
@@ -562,7 +565,10 @@
                           :levanzo.hydra/id
                           :levanzo.hydra/type
                           :levanzo.hydra/title
-                          :levanzo.hydra/description]}]
+                          :levanzo.hydra/description]
+                   :or {operations []}
+                   :as args}]
+  (s/assert ::collection-args args)
   (->Collection (resolve "hydra:Collection")
                 is-paginated
                 member-class
@@ -694,12 +700,24 @@
 (defn find-supported-property
   "Finds a supported property in the API by ID"
   [api supported-property-id]
-  (-> api
-      :supported-classes
-      (map #(:supported-properties %))
-      flatten
-      (filter #(= (get-in % [:common-props ::id])))
-      first))
+  (->> api
+       :supported-classes
+       (map #(:supported-properties %))
+       flatten
+       (filter #(= supported-property-id (get-in % [:common-props ::id])))
+       first))
+
+(defn find-property
+  "Finds a property in the API by ID"
+  [api property-id]
+  (->> api
+       :supported-classes
+       (map #(:supported-properties %))
+       flatten
+       (map #(:property %))
+       flatten
+       (filter #(= property-id (get-in % [:common-props ::id])))
+       first))
 
 (defn find-class-operations
   "Finds a class in the API by ID"
@@ -715,10 +733,16 @@
 
 (defn find-model [api uri]
   (or (find-class api uri)
-      (find-supported-property api uri)))
+      (find-supported-property api uri)
+      (find-property api uri)))
 
 (defn class-model? [model]
   (= (:uri model) (resolve "hydra:Class")))
 
 (defn supported-property? [model]
   (= (:uri model) (resolve "hydra:SupportedProperty")))
+
+(defn id
+  "Extracts the URI identifying a component of the Hydra model"
+  [x]
+  (if (string? x) x (-> x :common-props ::id)))

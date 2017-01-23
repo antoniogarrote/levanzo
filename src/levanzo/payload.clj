@@ -13,8 +13,10 @@
                         #(tg/fmap (fn [uri]
                                     {::hydra/id uri})
                                   (s/gen ::hydra/id))))
-(s/def ::uri-or-model-args (s/or :uri ::hydra/id
-                                 :with-uri (s/keys :req-un [::common-props])))
+(s/def ::uri-or-model-args (s/and (s/or :uri ::hydra/id
+                                        :with-uri (s/and
+                                                   (s/keys :req-un [::common-props])
+                                                   #(some? (-> % (get-in [:common-props ::hydra/id])))))))
 
 (s/def ::model ::uri-or-model-args)
 (s/def ::property ::uri-or-model-args)
@@ -110,26 +112,52 @@
       uri
       (throw (Exception. (str "Cannot obtain URI from " object))))))
 
+(s/def ::args (s/* (s/or :keys keyword?
+                         :val any?)))
+(s/def ::model ::uri-or-model-args)
+(s/def ::base ::jsonld-spec/uri)
+
 (s/fdef link-for
-        :args (s/cat :model ::uri-or-model-args
-                     :args (s/map-of keyword? any?))
+        :args (s/cat :args-map (s/keys :req-un [::model]
+                                       :opt-un [::args
+                                                ::base]))
         :ret ::hydra/id)
-(defn link-for [model args]
-  (s/assert ::uri-or-model-args model)
-  (s/assert (s/map-of keyword? any?) args)
+(defn link-for [{:keys[model args base]
+                 :as link-args
+                 :or {args []}}]
+  (s/assert (s/keys :req-un [::model]
+                    :opt-un [::args
+                             ::base])
+            link-args)
   (let [args (concat [(lns/resolve (uri-or-model model))]
                      (->> args (into []) flatten))]
-    (apply routing/link-for args)))
+    (let [link (apply routing/link-for args)]
+      (if (string/index-of link "://")
+        link
+        (str (or base "") link)))))
+
 
 (s/fdef jsonld
-        :args (s/cat :props (s/* (s/or :tuple       (s/tuple string? any?)
-                                       :jsondl-pair (s/map-of string? any?))))
+        :args (s/with-gen
+                (s/cat :props (s/+ (s/or :map-tuple   (s/tuple string? any?)
+                                         :jsondl-pair (s/map-of string? any?))))
+                #(tg/fmap (fn [vals]
+                            (->> vals
+                                 (map (fn [[k v]]
+                                        (if (string? v)
+                                          [k {"@id" v}]
+                                          [k {"@value" v}])))
+                                 (into {})))
+                          (tg/vector
+                           (tg/tuple (s/gen ::jsonld-spec/uri)
+                                     (tg/one-of [(s/gen ::jsonld-spec/uri)
+                                                 tg/pos-int])))))
         :ret ::jsonld-spec/expanded-jsonld)
 (defn jsonld
   "Builds a new JSON-LD object"
   [& props]
-  (s/assert (s/coll-of (s/or :map-tuple (s/map-of string? any?)
-                             :tupe (s/tuple string? any?))) props)
+  (s/assert (s/coll-of (s/or :jsondl-pair (s/map-of string? any?)
+                             :map-tuple (s/tuple string? any?))) props)
   (let [json (into {} props)
         context (get json "@context" {})
         context (merge @*context* context)]
@@ -168,8 +196,8 @@
 
 (defn id
   "Generates a JSON-LD [@id TYPE] pair"
-  ([{:keys [model args] :or {args {}}}]
-   {"@id" (link-for model args)}))
+  ([{:keys [model args base] :or {args {}} :as id-args}]
+   {"@id" (link-for id-args)}))
 
 
 (defn type
@@ -190,15 +218,18 @@
 (s/fdef supported-link
         :args (s/cat :args (s/keys :req-un [::property
                                             ::model]
-                                   :opt-un [::args]))
+                                   :opt-un [::args
+                                            ::base]))
         :ret (s/map-of string? any?))
 (defn supported-link
   "Generates a JSON-LD [property {@id link}]  pair"
-  ([{:keys[property model args]}]
+  ([{:keys[property model args base]}]
    (let [property-uri (uri-or-model property)]
      (when (nil? property-uri)
        (throw (ex-info (str "Cannot find link information for model " property) {:model property})))
-     {property-uri (id {:model model :args args})})))
+     (let [id-args {:model model :args args :base base}
+           id-args (->> id-args (filter (fn [[k v]] (some? v))) (into {}))]
+       {property-uri (id id-args)}))))
 
 (s/def ::current integer?)
 (s/def ::first integer?)
@@ -238,7 +269,7 @@
 (defn partial-view
   "Generates a collection partial view for a collection"
   [{:keys [model args current first last next previous pagination-param] :or {args {}}}]
-  (let [collection-id (link-for model args)]
+  (let [collection-id (link-for {:model model :args args})]
     [(lns/hydra "view") (->> {"@id" (add-param collection-id pagination-param current)
                               "@type" (lns/hydra "PartialCollectionView")}
                              (jsonld/link-if-some (add-param collection-id pagination-param first)

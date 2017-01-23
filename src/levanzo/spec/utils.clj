@@ -13,10 +13,10 @@
             (->> (filter (fn [sym] (and (nil? (string/index-of (str sym) "routing"))
                                        (nil? (string/index-of (str sym) "schema"))
                                        (nil? (string/index-of (str sym) "payload"))
+                                       (nil? (string/index-of (str sym) "indexing"))
                                        ))))
             (stest/check {:clojure.spec.test.check/opts {:num-tests num-tests}})
             stest/summarize-results)]
-    (prn results)
     (is (= total check-passed))))
 
 
@@ -28,12 +28,11 @@
                                (and (nil? (string/index-of (str sym) "routing"))
                                     (nil? (string/index-of (str sym) "schema"))
                                     (nil? (string/index-of (str sym) "payload"))
+                                    (nil? (string/index-of (str sym) "indexing"))
                                     ))))]
     (doseq [symbol symbols]
-      (println "\n\nTESTING " symbol)
       (let [{:keys [total check-passed] :as results} (time (-> (stest/check symbol {:clojure.spec.test.check/opts {:num-tests num-tests}})
                                                                (stest/summarize-results)))]
-        (prn results)
         (is (= total check-passed))))))
 
 (defn check-symbol

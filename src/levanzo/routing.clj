@@ -2,6 +2,7 @@
   (:require [levanzo.hydra :as hydra]
             [levanzo.namespaces :as lns]
             [levanzo.spec.jsonld :as jsonld-spec]
+            [cemerick.url :refer [url]]
             [clojure.string :as string]
             [clojure.spec :as s]
             [bidi.bidi :as bidi]
@@ -102,7 +103,6 @@
   (let [routes (first (process-routes* [routes]))]
     (reset! *routes* routes)))
 
-
 (s/fdef link-for
         :args (s/cat :model (s/or :id ::hydra/id)
                      :link-args (s/* (s/or :keys keyword?
@@ -153,3 +153,20 @@
   []
   (reset! *routes-register* {})
   (reset! *routes* []))
+
+
+(s/fdef match-uri
+        :args (s/cat :uri ::jsonld-spec/uri)
+        :ret (s/keys :req-un [::route-params
+                              ::path
+                              ::model
+                              ::params
+                              ::handlers]))
+(defn match-uri
+  "Matches a full URI computing first the path"
+  [uri]
+  (let [{:keys [path]} (url uri)
+        path (if (string/starts-with? path "/")
+               (string/replace-first path "/" "")
+               path)]
+    (match path)))

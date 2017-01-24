@@ -264,6 +264,7 @@
   [api supported-property]
   (let [property (:property supported-property)
         property-validator (parse-property api property)]
+    (log/debug "Validating property " property)
     (log/debug "Validating property " (-> property :common-props ::hydra/id))
     (with-access-mode-validation supported-property
       (fn [mode api-validations jsonld]
@@ -332,3 +333,16 @@
                 (assoc acc uri validation)))
             {}
             classes)))
+
+
+(defn valid-instance? [mode instance {:keys [supported-classes]}]
+  (if (some? (get instance "@type"))
+    (let [validations (build-api-validations {:supported-classes supported-classes})
+          types (flatten [(get instance "@type")])]
+      (->> types
+           (map (fn [type] (if (some? (get validations type))
+                            [type ((get validations type) mode validations instance)]
+                            nil)))
+           (filter some?)
+           (into {})))
+    (throw (ex-info (str "Cannot validate json-ld document without type")))))

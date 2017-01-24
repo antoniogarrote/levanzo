@@ -166,6 +166,13 @@
           json)
         expand)))
 
+(defn instance
+  "Builds a new JSON-LD object that is an instance of the provided class"
+  [class-model & props]
+  (apply jsonld
+         (concat [["@type" (hydra/id class-model)]] props)))
+
+
 (defn merge-jsonld
   "Merges two json-ld documents for the same ID"
   ([a b]

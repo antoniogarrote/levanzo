@@ -105,19 +105,23 @@ Finally, the Hydra class can be described using the `levanzo.hydra/class` functi
 The following snippet declares the [Schema.org PostalAddress](https://schema.org/PostalAddress) class.
 
 ``` clojure
+;; The PostalAddress class
 (def sorg-PostalAddress (hydra/class {::hydra/id (sorg "PostalAddress")
                                       ::hydra/title "PostalAddress"
                                       ::hydra/description "The mailing address"
                                       ::hydra/supported-properties
-                                      [(hydra/supported-property {::hydra/property (hydra/id sorg-street-address)
-                                                                  ::hydra/required true})
-                                       (hydra/supported-property {::hydra/property (hydra/id sorg-postal-code)})]}))
+                                      [(hydra/supported-property
+                                        {::hydra/property sorg-street-address
+                                         ::hydra/required true})
+                                       (hydra/supported-property
+                                        {::hydra/property sorg-postal-code})]}))
 ```
 
 Properties can also have as values links to other resources. Links are declared using the `levanzo.hydra/link` function.
 
 The following lines of code declare the [Schema.org address](https://schema.org/address) property that can be used to link People to PostalAddresses.
 Other scalar properties to model a [Schema.org Person](https://schema.org/Person) are also defined.
+We also define a scalar property in our vocabulary namespace the `password` property. We mark this property as `required` and `writeonly`. That means that will be required required but only when we write data in the resource, for example in a POST operation.
 
 ``` clojure
 ;; People -> address -> PostalAddress link
@@ -125,6 +129,7 @@ Other scalar properties to model a [Schema.org Person](https://schema.org/Person
                                ::hydra/title "address"
                                ::hydra/description "Physical address of the resource"
                                ::hydra/range (hydra/id sorg-PostalAddress)}))
+
 
 ;; Properties for People
 (def sorg-name (hydra/property {::hydra/id (sorg "name")
@@ -138,26 +143,40 @@ Other scalar properties to model a [Schema.org Person](https://schema.org/Person
                                  ::hydra/description "Email address"
                                  ::hydra/range xsd/string}))
 
+(def vocab-password (hydra/property {::hydra/id (vocab "password")
+                                     ::hydra/title "password"
+                                     ::hydra/description "Secret passworld"
+                                     ::hydra/range xsd/string}))
 ```
 Links are also connected to classes using the `levanzo.hydra/supported-property` function, but when connecting links, we can declare a collection of [Hydra operations](http://www.hydra-cg.com/spec/latest/core/#hydra:operation) specifying how links introduced by this property can be accessed using HTTP requests:
 
 ``` clojure
+
 ;; The Person class
 (def person-address-link (hydra/supported-property {::hydra/id (vocab "address-link")
-                                                    ::hydra/property (hydra/id sorg-address)
+                                                    ::hydra/property sorg-address
+                                                    ::hydra/readonly true
                                                     ::hydra/operation
-                                                    [(hydra/get-operation {::hydra/returns (hydra/id sorg-PostalAddress)})
-                                                     (hydra/post-operation {::hydra/expects (hydra/id sorg-PostalAddress)
-                                                                            ::hydra/returns (hydra/id sorg-PostalAddress)})
+                                                    [(hydra/get-operation
+                                                      {::hydra/returns (hydra/id sorg-PostalAddress)})
+                                                     (hydra/post-operation
+                                                      {::hydra/expects (hydra/id sorg-PostalAddress)
+                                                       ::hydra/returns (hydra/id sorg-PostalAddress)})
                                                      (hydra/delete-operation {})]}))
 
 (def sorg-Person (hydra/class {::hydra/id (sorg "Person")
                                ::hydra/title "Person"
                                ::hydra/description "A person"
                                ::hydra/supported-properties
-                               [(hydra/supported-property {::hydra/property (hydra/id sorg-name)})
-                                (hydra/supported-property {::hydra/property (hydra/id sorg-email)
-                                                           ::hydra/required true})
+                               [(hydra/supported-property
+                                 {::hydra/property sorg-name})
+                                (hydra/supported-property
+                                 {::hydra/property sorg-email
+                                  ::hydra/required true})
+                                (hydra/supported-property
+                                 {::hydra/property vocab-password
+                                  ::hydra/required true
+                                  ::hydra/writeonly true})
                                 person-address-link]}))
 ```
 In the previous example we have defined three operations for the address link. The operations are bound to the HTTP GET, POST and DELETE HTTP methods.
@@ -165,6 +184,164 @@ For each operation we have also established the expected and return types. Final
 This ID will be useful when declaring the HTTP bindings for this API as well as to generate link URIs programatically.
 
 For more details about how to declare affordances for the resources of an API using Hydra and Levanzo, please read the [spec documentation](http://www.hydra-cg.com/spec/latest/core/#adding-affordances-to-representations) and the documentation for the Clojure functions.
+
+### 3. Instance creation, validation and generators
+
+Once we have declared our API, we can create JSON-LD instances of the classes we have defined.
+
+The functions to work with JSON-LD are defined in the namespace `levanzo.payload`.
+
+To create a new JSON-LD document we can use the `levanzo.payload/jsonld` function. `jsonld` accepts pairs with a property and the value for the property and generates the JSON-LD document out of them.  We can also use other auxiliary functions in the namespace to declare properties and links.
+
+``` clojure
+;; Working with payloads
+
+(require '[levanzo.payload :as payload])
+
+(def address (payload/jsonld
+              ["@type" (hydra/id sorg-PostalAddress)]
+              [(hydra/id sorg-street-address) {"@value" "Finchley Road 523"}]
+              [(hydra/id sorg-postal-code) {"@value" "NW3 7PB"}]))
+
+(def address-alt (payload/instance
+                  sorg-PostalAddress
+                  (payload/supported-property {:property sorg-street-address
+                                               :value "Finchley Road 523"})
+                  (payload/supported-property {:property sorg-postal-code
+                                               :value "NW3 7PB"})))
+(is (= address address-alt))
+```
+
+JSON-LD documents can be validated using the information described in the API Hydra classes. Data ranges, required, readonly and writeonly flags will be used to check if the document is valid.
+
+All the validation functionality is in the `levanzo.schema` namespace. The function `levanzo.schema/valid-instance?` can be used to check if one document is valid provided a certain access mode and a collection of classes.
+
+The output of this function is a map, with classes URIs as keys and validation error descriptions as value if the instance is invalid or nil if the document is valid for that class. All the declared classes in the JSON-LD instance will be checked for constraints.
+
+The following snippet shows the validation of different instances of the Person and PostalAddress classes:
+
+``` clojure
+(require '[levanzo.schema :as schema])
+
+;; valid
+(schema/valid-instance? :read
+                        (payload/instance
+                         sorg-PostalAddress
+                         (payload/supported-property {:property sorg-street-address
+                                                      :value "Finchley Road 523"})
+                         (payload/supported-property {:property sorg-postal-code
+                                                      :value "NW3 7PB"}))
+                        {:supported-classes [sorg-PostalAddress]})
+
+;; valid, postal code is optional on read
+(schema/valid-instance? :read
+                        (payload/instance
+                         sorg-PostalAddress
+                         (payload/supported-property {:property sorg-street-address
+                                                      :value "Finchley Road 523"}))
+                        {:supported-classes [sorg-PostalAddress]})
+
+;; invalid, streeet addres has range string
+(schema/valid-instance? :read
+                        (payload/instance
+                         sorg-PostalAddress
+                         (payload/supported-property {:property sorg-street-address
+                                                      :value 523}))
+                        {:supported-classes [sorg-PostalAddress]})
+
+;; invalid, streeet addres is mandatory on read
+(schema/valid-instance? :read
+                        (payload/instance
+                         sorg-PostalAddress
+                         (payload/supported-property {:property sorg-postal-code
+                                                      :value "NW3 7PB"}))
+                        {:supported-classes [sorg-PostalAddress]})
+
+;; valid
+(schema/valid-instance? :read
+                        (payload/instance
+                         sorg-Person
+                         (payload/supported-property {:property sorg-name
+                                                      :value "Tim"})
+                         (payload/supported-property {:property sorg-email
+                                                      :value "timbl@w3.org"}))
+                        {:supported-classes [sorg-Person]})
+
+;; invalid, password is mandatory on write
+(schema/valid-instance? :write
+                        (payload/instance
+                         sorg-Person
+                         (payload/supported-property {:property sorg-name
+                                                      :value "Tim"})
+                         (payload/supported-property {:property sorg-email
+                                                      :value "timbl@w3.org"}))
+                        {:supported-classes [sorg-Person]})
+
+
+;; valid
+(schema/valid-instance? :write
+                        (payload/instance
+                         sorg-Person
+                         (payload/supported-property {:property sorg-name
+                                                      :value "Tim"})
+                         (payload/supported-property {:property sorg-email
+                                                      :value "timbl@w3.org"})
+                         (payload/supported-property {:property vocab-password
+                                                      :value "~asd332fnxzz"}))
+                        {:supported-classes [sorg-Person]})
+
+;; invalid, password is writeonly
+(schema/valid-instance? :read
+                        (payload/instance
+                         sorg-Person
+                         (payload/supported-property {:property sorg-name
+                                                      :value "Tim"})
+                         (payload/supported-property {:property sorg-email
+                                                      :value "timbl@w3.org"})
+                         (payload/supported-property {:property vocab-password
+                                                      :value "~asd332fnxzz"}))
+                        {:supported-classes [sorg-Person]})
+```
+
+Future versions of the library will add support for more sophisticated declarative validations adding support for SHACL.
+
+Another interesting features of Levanzo when working with payloads is the integraction with `clojure.spec` in order to sample generated instances of a particular class.
+A Generator for any API class can be obtained using the functions in the `levanzo.spec.schema` namespace.
+
+For example, to generate some instances of Person we can use the following code:
+
+``` clojure
+(clojure.pprint/pprint (last (gen/sample (schema-spec/make-payload-gen :read sorg-Person {:supported-classes [sorg-Person]}) 100)))
+;; {"http://schema.org/email"
+;;  [{"@value" "p6a2b11qHl4NH47On1xyf5KR4onN1zyb68",
+;;    "@type" "http://www.w3.org/2001/XMLSchema#string"}],
+;;  "http://schema.org/address"
+;;  [{"@id"
+;;    "https://15.165.15.23/1Xq35/zCm1b/70TBU/4EYLx/S3DB4/1aVcM/x29f5/n6844"}],
+;;  "@id" "https://0.1.1.19/66xvB/x6tET/B90U9/U1sx0/cqjCc/RhLJg/h/3f2rP/8HfJ1",
+;;  "@type" ["http://schema.org/Person"]}
+```
+
+We can also provide custom generators for certain properties (and the document @id) instead of allowing the code in `make-payload-gen` to pick the value based in the property range:
+
+``` clojure
+;; Overwriting generators
+(require '[clojure.test.check.generators :as tg])
+
+(clojure.pprint/pprint (last (gen/sample (schema-spec/make-payload-gen
+                                          :read
+                                          sorg-Person
+                                          {:supported-classes [sorg-Person]}
+                                          {(hydra/id sorg-email) (tg/return {"@value" "test@test.com"})
+                                           (hydra/id sorg-name)  (tg/return {"@value" "Constant Name"})
+                                           (hydra/id sorg-address) (tg/return {"@id" "http://test.com/constant_address"})
+                                           "@id" (tg/return "http://test.com/generated")}) 100)))
+;; {"http://schema.org/name" [{"@value" "Constant Name"}],
+;; "http://schema.org/email" [{"@value" "test@test.com"}],
+;; "http://schema.org/address" [{"@id" "http://test.com/constant_address"}],
+;; "@id" "http://test.com/generated",
+;; "@type" ["http://schema.org/Person"]}
+```
 
 ## License
 

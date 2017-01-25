@@ -35,6 +35,9 @@ Setting up the name-spaces for the vocabularies you are going to use in your API
 The following snippet from the sample application shows how to declare a vocabulary and how to set-up the default vocabulary for our API:
 
 ``` clojure
+;; let's check the structure of the arguments
+(clojure.spec/check-asserts true)
+
 (require '[levanzo.namespaces :as lns]
          '[clojure.test :refer [is]])
 
@@ -177,11 +180,16 @@ Links are also connected to classes using the `levanzo.hydra/supported-property`
                                  {::hydra/property vocab-password
                                   ::hydra/required true
                                   ::hydra/writeonly true})
-                                person-address-link]}))
+                                person-address-link]
+                               ::hydra/operations
+                               [(hydra/get-operation {::hydra/returns sorg-Person})
+                                (hydra/delete-operation {})]}))
 ```
 In the previous example we have defined three operations for the address link. The operations are bound to the HTTP GET, POST and DELETE HTTP methods.
 For each operation we have also established the expected and return types. Finally, notice that we have given an optional URI ID to the supported property for the link.
 This ID will be useful when declaring the HTTP bindings for this API as well as to generate link URIs programatically.
+
+The `sorg-Person` class also has a list operations associated to them that can be invoked through the URI identifying any instance of the Person class.
 
 For more details about how to declare affordances for the resources of an API using Hydra and Levanzo, please read the [spec documentation](http://www.hydra-cg.com/spec/latest/core/#adding-affordances-to-representations) and the documentation for the Clojure functions.
 
@@ -341,6 +349,343 @@ We can also provide custom generators for certain properties (and the document @
 ;; "http://schema.org/address" [{"@id" "http://test.com/constant_address"}],
 ;; "@id" "http://test.com/generated",
 ;; "@type" ["http://schema.org/Person"]}
+```
+
+So far we have seen only how to deal with individual resources. Hydra also define the notion of a [Collection](http://www.hydra-cg.com/spec/latest/core/#collections).
+Collections are sets of resources related somehow. Collections also use a special property `hydra:member` to provide links to all the resources in the collection.
+
+The approach we follow in Levanzo is to declare a new Hydra class specialising `hydra:Collection` for each collection of resources exposed in an API.
+
+For example to declare a collection of people, we can use the `levanzo.hydra/collection` functions as following code shows:
+
+``` clojure
+;; Collections
+
+(def vocab-PeopleCollection (hydra/collection {::hydra/id (vocab "PeopleCollection")
+                                                ::hydra/title "People Collection"
+                                                ::hydra/description "Collection of all people in the API"
+                                                ::hydra/member-class (hydra/id sorg-Person)
+                                                ::hydra/is-paginated false
+                                                ::operations
+                                                [(hydra/get-operation {::hydra/returns (hydra/id vocab-PeopleCollection)})
+                                                 (hydra/post-operation {::hydra/expects (hydra/id sorg-Person)
+                                                                        ::hydra/returns (hydra/id sorg-Person)})]}))
+```
+
+We have associated two operations to the people collection: a GET operation to retrieve the full collection and a POST operation that can be used to create an instance in the collection.
+
+Now, we can create an instance of the collection using `levanzo.payload/instance` or `levanzo.payload/jsonld` as before.
+
+Finally, it is important to remember that we can generated [expanded](https://www.w3.org/TR/json-ld-api/#expansion-algorithms) and [compacted](https://www.w3.org/TR/json-ld-api/#compaction-algorithms) versions of the JSON-LD documents using the `levanzo.payload/expand` and `levanzo.payload/compact` functions.
+
+Both algorithms relay in the information stored in a context to transform the document. Before using these functions we'll first need to set the context for our application using the `levanzo.payload/context` function, then we can run the algorithms on the JSON-LD payload:
+
+``` clojure
+;; Working with the context
+(payload/context {:base base
+                  :vocab (vocab)
+                  :ns ["vocab"]
+                  "id" "@id"
+                  "type" "@type"
+                  "Person" {"@id" (sorg "Person")}
+                  "name" {"@id" (sorg "name")}
+                  "email" {"@id" (sorg "email")}})
+
+;; expansion and compaction of JSON-LD documents
+(def tim (payload/instance
+          sorg-Person
+          ;; we set the @id manually for now
+          ["@id" (str base "tim")]
+          (payload/supported-property {:property sorg-name
+                                       :value "Tim"})
+          (payload/supported-property {:property sorg-email
+                                       :value "timbl@w3.org"})))
+
+(clojure.pprint/pprint (-> tim payload/compact (dissoc "@context")))
+;;{"id" "tim",
+;; "type" "Person",
+;; "email" "timbl@w3.org",
+;; "name" "Tim"}
+
+;; Compacting the document
+(clojure.pprint/pprint (payload/expand tim))
+;; {"@id" "http://localhost:8080/tim",
+;;  "@type" ["http://schema.org/Person"],
+;;  "http://schema.org/email" [{"@value" "timbl@w3.org"}],
+
+;; equivalences
+(is (= (-> tim payload/expand)
+       (-> tim payload/compact payload/expand)))
+```
+As you can see, setting the context correctly, we can produce JSON documents that, apart from the `@context` that can be cached, look like regular JSON documents.
+On the other hand, applying the expansion algorithm we can produce a document with a deterministic structure that is easy to process programaticallly.
+
+If you want to learn more about JSON-LD and the different transformation algorithms, check the [documentation](https://www.w3.org/TR/json-ld/) for the [standards](https://www.w3.org/TR/json-ld-api/). You can also try the [JSON-LD playground](http://json-ld.org/playground/) to try some transformations interactively from the web browser.
+
+Levanzo *always* passes as arguments to functions expanded JSON-LD documents.
+
+### 3. Routes and links
+
+In the previous sections we have defined an API as a set of classes with relationships among them. We have also created instances of these classes.
+Relationships between classes become HTTP links between instances of these classes when they are exposed through an HTTP interface.
+
+In this section we will show how to declare the HTTP bindings for the classes and instances of an API and how to use that information to generate URIs that can be used to identify instances as well as to generate HTTP links between instances.
+
+But before defining the bindings let's declare the list of classes that are part of our API as well as to establish an entry-point for clients accessing the resources.
+We can use the `levanzo.hydra/api` function for it:
+
+``` clojure
+;; API definition
+(def API (hydra/api {::hydra/title "People Example API"
+                     ::hydra/description "A toy API to demonstrate how to use Levanzo and Hydra"
+                     ::hydra/entrypoint "/people"
+                     ::hydra/entrypoint-class (hydra/id vocab-PeopleCollection)
+                     ::hydra/supported-classes [vocab-PeopleCollection
+                                                sorg-Person
+                                                sorg-PostalAddress]}))
+```
+
+In the definition of our API together with some meta-data we have defined an entrypoint `/people` and we have declared the classes that are part of our API domain.
+
+The http bindings for an Levanzo API can be defined using the functions in the `levanzo.http` namespace.
+
+The bindings are defined in a tree data structure where in each node we define a path for a model in the API (class or link) and a set of handler functions for the different HTTP methods declared in the operations of the class or link. We can also declare the list of nested resources.
+
+This is a possible set of bindings for our API:
+
+``` clojure
+(require '[levanzo.http :as http] :reload)
+
+(def api-routes {:path ["people"]
+                 :model vocab-PeopleCollection
+                 :handlers {:get get-people
+                            :post post-person}
+                 :nested [{:path ["/" :person-id]
+                           :model sorg-Person
+                           :handlers {:get get-person
+                                      :delete delete-person}
+                           :nested [{:path ["/address"]
+                                     :model person-address-link
+                                     :handlers {:get get-address
+                                                :post post-address
+                                                :delete delete-address}}]}]})
+(def api-handler (http/middleware {:api API
+                                   :mount-path "/"
+                                   :routes api-routes
+                                   :documentation-path "/vocab"}))
+```
+
+In this configuration we create a route for our entrypoint as declared in the API `/people` and we generate routes for the other classes in the API:
+
+| Mount point | Path                      | Model                     |
+|-------------|---------------------------|---------------------------|
+| /           | people                    | `vocab-PeopleCollection` |
+| /           | people/:person-id         | `sorg-Person`             |
+| /           | people/:person-id/address | `person-addres-link`      |
+
+
+Finally we invoke the function `levanzo.http/middleware` to generate a [ring](https://github.com/ring-clojure/ring-spec) compatible handler function that can be used to serve request.
+We are passing to the `middleware` function a mount path for the handler and a path for the vocabulary of the API.
+With this information the `levanzo.http/middleware` function will generate an additional route for the vocabulary of our API, with all the meta-data we have declared for our Hydra classes. It will also add a HTTP Link header, [as prescribed in the Hydra spec](http://www.hydra-cg.com/spec/latest/core/#discovering-a-hydra-powered-web-api),  pointing to the vocabulary for every request to an API resource, so the API description can be discovered by HTTP clients.
+The path we have chosen for the documentation matches the vocabulary URI we have defined for our API. This makes all our terms deferenceable.
+
+Since we have declared the HTTP bindings for our API, we can also now generate links for the instances of our API.
+The basic function to generate a link is `levanzo.payload/link-for`. The function accepts a model, arguments and an optional base argument and will generate the appropriate link according to the defined routes.
+
+``` clojure
+(is (= "http://localhost:8080/people/1"
+     (payload/link-for {:model sorg-Person
+                        :args {:person-id 1}
+                        :base "http://localhost:8080/"}))
+```
+
+The model argument must match one of the declared models in the routes: classes, collection or links.
+
+Some helper functions in `levanzo.payload` also support the same arguments to generate links like `levanzo.payload/id` or `levanzo.payload/supported-link`.
+
+More complex hypermedia controls can be defined using Hydra templated links and templates. Check the functions `levanzo.hydra/templated-link`, `levanzo.payload/supported-template` and the [relevant Hydra documentation](http://www.hydra-cg.com/spec/latest/core/#templated-links) for more information.
+
+With this URI minting functionality we can code the handlers for our API resources. This is a possible toy implementation using just a couple of in-memory atoms to hold the data:
+
+``` clojure
+(def people-db (atom {}))
+(def addresses-db (atom {}))
+
+(defn get-people [args body request] (payload/instance
+                                      vocab-PeopleCollection
+                                      (payload/id {:model vocab-PeopleCollection
+                                                   :base base})
+                                      (payload/members (vals @people-db))))
+
+(defn post-person [args body request] (swap! people-db
+                                             #(let [id (inc (count %))
+                                                    new-person (-> body
+                                                                   ;; passwords are writeonly, we don't store them
+                                                                   (dissoc (hydra/id vocab-password))
+                                                                   (merge (payload/id
+                                                                           {:model sorg-Person
+                                                                            :args {:person-id id}
+                                                                            :base base}))
+                                                                   (merge (payload/supported-link
+                                                                           {:property sorg-address
+                                                                            :model person-address-link
+                                                                            :args {:person-id id}
+                                                                            :base base})))]
+                                                (assoc % (get new-person "@id") (payload/expand new-person)))))
+
+(defn get-person [args body request] (let [person (get @people-db
+                                                       (payload/link-for {:model sorg-Person
+                                                                          :args args
+                                                                          :base base}))]
+                                       (or person {:status 404 :body "Cannot find resource"})))
+
+(defn delete-person [args body request] (swap! people-db #(dissoc % (payload/link-for {:model sorg-Person
+                                                                                       :args args
+                                                                                       :base base}))))
+
+(defn get-address [args body request] (let [address (get @addresses-db
+                                                         (payload/link-for {:model person-address-link
+                                                                            :args args
+                                                                            :base base}))]
+                                        (or address {:status 404 :body "Cannot find resource"})))
+
+(defn post-address [args body request] (swap! addresses-db
+                                              #(let [new-address-id (payload/link-for {:model person-address-link
+                                                                                       :args args
+                                                                                       :base base})
+                                                     new-address (assoc body "@id" new-address-id)]
+                                                 (assoc % new-address-id (payload/expand new-address)))))
+
+(defn delete-address [args body request] (swap! addresses-db #(dissoc % (payload/link-for {:model person-address-link
+                                                                                           :args args
+                                                                                           :base base}))))
+```
+
+Handlers are just functions accepting a map of arguments (including the parameters from URI templates in the routes), the optional body of the request, and the full ring Request object.
+They return either a JSON-LD document or a ring middleware map response with `:status`, `:body` and `:headers` keys.
+
+The body passed to the handler will alway be a JSON-LD expanded document. The handler can return JSON-LD in any format.
+
+The generated middleware will perform validation over requests and response bodies according to the information provided in the API description.
+Validations can be disabled using the functions `levanzo.http/set-validate-responses` and `levanzo.http/set-validate-requests`.
+Check the `levanzo.http` namespace for other configuration options.
+
+Now that we have coded our handlers, we can start our API using any ring compatible handler. For example, using [http-kit](http://www.http-kit.org/)
+
+``` clojure
+(taoensso.timbre/set-level! :debug)
+(http/set-debug-errors! true)
+
+(require '[org.httpkit.server :as http-kit])
+
+(def stop-api (http-kit/run-server api-handler {:port 8080}))
+;; to stop the server
+;; (stop-api)
+```
+
+Now we can access the API resources and the documentation using any HTTP client like curl or a generic Hydra client. For example we could use [Markus Lanthaler's web Hydra](https://github.com/antoniogarrote/HydraConsole) console to explore our API:
+
+![console1](doc/images/console1.png)
+![console2](doc/images/console2.png)
+![console3](doc/images/console3.png)
+
+### 4. Indexing and graph queries
+
+Once we have generated the HTTP bindings for the API, we can access the data in the API using a RESTful interface and follow links and hypermedia-controls to resources.
+
+One of the advantages of using Hydra as the basis of an API is that we are not only building RESTful APIs with great support for Hypermedia, we are also describing a normalised data graph based on the RDF data model. Levanzo offers an additional interface to access the information in this data graph that can be used to run graph queries over it using the SPARQL query language.
+
+The functionality is based in the [Triple Pattern Fragments](https://www.hydra-cg.com/spec/latest/triple-pattern-fragments/) spec proposal. The idea is that any JSON-LD document can be viewed as a collection of basic units called triples, assertions composed of subject-predicate-object compmonents.
+
+For example, we can use the `levanzo.payload/->triples` function to transform a document into triples:
+
+``` clojure
+(def christian (payload/instance sorg-Person
+                                 (payload/id {:model sorg-Person
+                                              :args {:person-id 1}
+                                              :base base})
+                                 (payload/supported-property {:property sorg-name
+                                                              :value "Christian"})))
+(payload/->triples christian)
+```
+
+The outcome of this function application is the following sequence of triples:
+
+``` clojure
+[{:s {"@id" "http://localhost:8080/people/1"},
+  :p {"@id" "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"},
+  :o {"@id" "http://schema.org/Person"}}
+ {:s {"@id" "http://localhost:8080/people/1"},
+  :p {"@id" "http://schema.org/name"},
+  :o {"@value" "Christian"}}]
+```
+
+The Triple Pattern Fragments spec defines an interface where clients can request triples in the whole API matching a triple patterns. This interface can then be used by a Triple Pattern Fragments client to satisfies complex SPARQL queries over the data in the server.
+
+Levanzo can generate the Triple Pattern Fragments interface but it needs information about what triples can be retrieved from the API. Depending on the persistence layer of the API or other application constraints not all patterns might be valid. In order to provide this information an indexing map for the API must be provided.
+
+Functions for indexing your API can be found in the `levanzo.indexing` namespace.
+
+There are 3 main types of index that can be declared per Hydra class in the API:
+
+- resource index: for a particular subject, returns the matching resource
+- property index: for a particular predicate and optional object, returns all instances of the class with a property (and value if requested) matching the predicate and object
+- join index: for a particular subject, predicate and list of objects, where the predicate matches a link property, returns all the objects where link has been established or all the link values if the list of objects is null.
+
+With this indexing information Levanzo will generate the Triple Pattern Fragments interface to satisfy different pattern queries. This also means that API developers can control which information acn be queried, defining indexing information only for the classes and properties that are feasible or allowed. The indexing function also receive a full ring HTTP request that can be used to check constraints like authentication over the resources being indexed.
+
+The following code snippet shows a toy implementation of the indexing functions for our API:
+
+``` clojure
+(defn paginate-values [values {:keys [page per-page]}]
+  (->> values
+       (drop (* (dec page) per-page))
+       (take (* page per-page))))
+
+(defn index-property [collection]
+  (fn [{:keys [predicate object pagination]}]
+    (let [{:keys [page per-page]} pagination
+          values (if (some? object)
+                   (->> (deref collection)
+                        vals
+                        (filter #(= object (-> % (get predicate) first (get "@value")))))
+                   (->> (deref collection)
+                        vals
+                        (filter #(-> % (get predicate) first some?))))]
+      (paginate-values values pagination))))
+
+(defn person-address-link-join [{:keys [subject object pagination]}]
+  (let [subject (->> @people-db
+                     vals
+                     (filter #(= (get % "@id") subject))
+                     first)]
+    (if (and (some? subject)
+             (= (:page pagination) 1))
+      (let [joined-address (-> subject (get (hydra/id sorg-address)) first (get "@id"))
+            address (->> @addresses-db
+                         vals
+                         (filter #(= (get % "@id") joined-address))
+                         first)
+            object-set (set object)]
+        (if (some? object)
+          (if (object-set (get address "@id"))
+            [address]
+            [])
+          [address]))
+      [])))
+
+(def indices {sorg-Person
+
+              {:resource (fn [{:keys [subject]}] (get @people-db subject))
+               :property {sorg-name  (index-property people-db)
+                          sorg-email (index-property people-db)}
+               :join {person-address-link person-address-link-join}}
+
+              sorg-PostalAddress
+
+              {:resource (fn [{:keys [subject]}] (get @addresses-db subject))
+               :property {sorg-address (index-property addresses-db)
+                          sorg-postal-code (index-property addresses-db)}}})
 ```
 
 ## License

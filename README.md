@@ -461,20 +461,21 @@ This is a possible set of bindings for our API:
 
 ``` clojure
 (require '[levanzo.http :as http] :reload)
+(require '[levanzo.routing :as routing])
 
-(def api-routes {:path ["people"]
-                 :model vocab-PeopleCollection
-                 :handlers {:get get-people
-                            :post post-person}
-                 :nested [{:path ["/" :person-id]
-                           :model sorg-Person
-                           :handlers {:get get-person
-                                      :delete delete-person}
-                           :nested [{:path ["/address"]
-                                     :model person-address-link
-                                     :handlers {:get get-address
-                                                :post post-address
-                                                :delete delete-address}}]}]})
+(def api-routes (routing/api-routes {:path ["people"]
+                                     :model vocab-PeopleCollection
+                                     :handlers {:get get-people
+                                                :post post-person}
+                                     :nested [{:path ["/" :person-id]
+                                               :model sorg-Person
+                                               :handlers {:get get-person
+                                                          :delete delete-person}
+                                               :nested [{:path ["/address"]
+                                                         :model person-address-link
+                                                         :handlers {:get get-address
+                                                                    :post post-address
+                                                                    :delete delete-address}}]}]}))
 (def api-handler (http/middleware {:api API
                                    :mount-path "/"
                                    :routes api-routes
@@ -679,14 +680,18 @@ The following code snippet shows a toy implementation of the indexing functions 
                       address (->> @addresses-db
                                    vals
                                    (filter #(= (get % "@id") joined-address))
-                                   first)
-                      object-set (set object)]
+                                   first)]
                   (if (some? object)
-                    (if (object-set (get address "@id"))
-                      [address]
+                    (if (= (get object "@id") (get address "@id"))
+                      [{:subject subject
+                        :object address}]
                       [])
-                    [address]))
-                [])
+                    [{:subject subject
+                      :address address}]))
+                (->> @addresses-db
+                     (map (fn [address]
+                            {:subject {"@id" (string/replace (get address "@id") "/address" "")}
+                             :object address}))))
      :count 1}))
 
 (defn class-lookup [collection]

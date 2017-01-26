@@ -68,9 +68,8 @@
 
 ;; Join request, for a link to a collection, asking to
 ;; check which object URIs are in the collection
-(s/def ::objects (s/coll-of ::object))
 (s/def ::join-request (s/keys :req-un [::subject
-                                       ::objects
+                                       ::object
                                        ::pagination
                                        ::request]))
 (s/def ::join-fn fn?)
@@ -158,8 +157,8 @@
                (some? join)))  (do
                                  (log/debug (str "Group includes resource, properties and join handlers"))
                                  (->> (concat (or join [])
-                                             (or property [])
-                                             (or resource []))
+                                              (or property [])
+                                              (or resource []))
                                      (filter #((:pattern %) pattern))
                                      first))
       (or (some? property)
@@ -214,15 +213,14 @@
 
 (defn apply-join-handler [handler {:keys [s p o] :as pattern} pagination request]
   (log/debug "Applying join handler")
-  (let [{:keys [results count]} ((:handler handler) {:subject (get s "@id")
+  (let [{:keys [results count]} ((:handler handler) {:subject  (get s "@id")
                                                      :preicate (get p "@id")
-                                                     :object (if (some? o)
-                                                               [{"@id" (get o "@id")}]
-                                                               nil)
+                                                     :object   (get o "@id")
                                                      :pagination pagination
                                                      :request request})]
     {:results (if (some? results)
-                (map (fn [obj] {:s s :p p :o {"@id" (get obj "@id")}})
+                (map (fn [{:keys [subject object]}]
+                       {:s {"@id" (get subject "@id")} :p p :o {"@id" (get object "@id")}})
                      results)
                 [])
      :count count}))
@@ -273,7 +271,7 @@
    model for the route matches the provided model, whether
    it is a class or a supported-property link"
   [uri model]
-  (log/debug "Checking if URI " uri " matches model " model)
+  (log/debug "Checking if URI " uri " matches model " (-> model :common-props ::hydra/id))
   (let [match (routing/match-uri uri)]
     (log/debug (some? match))
     (if (some? match)
@@ -300,22 +298,26 @@
       (not (-> property :property-props ::writeonly))
       false)))
 
-(defn generate-class-pattern-handler [model {:keys [resource properties-map links-map]} api]
+(defn generate-class-pattern-handler [model {:keys [resource properties-map links-map] :as indices} api]
   (let [resource-lookup-handler (if (some? resource)
-                                  [{:pattern #(and (some? (:s %))
-                                                   (link-matching-model? (-> % :s (get "@id")) model)
-                                                   (or (nil? (:p %))
-                                                       (accessible-property? (-> % :p (get "@id")) model)))
+                                  [{:pattern #(do
+                                                (log/debug "Resource pattern: checking if " (-> % :s (get "@id")) " and " (-> % :p (get "@id"))" matches " (-> model :common-props ::hydra/id))
+                                                (and (some? (:s %))
+                                                     (link-matching-model? (-> % :s (get "@id")) model)
+                                                     (or (nil? (:p %))
+                                                         (accessible-property? (-> % :p (get "@id")) model))))
                                     :model model
                                     :kind :resource
                                     :handler resource}]
                                   [])
         properties-handlers (->> (or properties-map {})
                                  (mapv (fn [[property handlers-map]]
-                                         {:pattern #(and
-                                                     (or (-> % :s nil?)
-                                                         (link-matching-model? (-> % :s (get "@id")) model))
-                                                     (= (-> % :p (get "@id")) property))
+                                         {:pattern #(do
+                                                      (log/debug "Property pattern: checking if " (-> % :s (get "@id")) " and " (-> % :p (get "@id"))" matches " property)
+                                                      (and
+                                                       (or (-> % :s nil?)
+                                                           (link-matching-model? (-> % :s (get "@id")) model))
+                                                       (= (-> % :p (get "@id")) property)))
                                           :handler (:index handlers-map)
                                           :kind :property
                                           :property-model (hydra/find-model api property)
@@ -324,7 +326,9 @@
                            (mapv (fn [[link handler]]
                                    (let [link-model (hydra/find-model api link)
                                          property (-> link-model :property :common-props ::hydra/id)]
-                                     {:pattern #(= (-> % :p (get "@id")) property)
+                                     {:pattern #(do
+                                                  (log/debug "Join pattern: checking if " (-> % :p (get "@id")) " matches " property)
+                                                  (= (-> % :p (get "@id")) property))
                                       :handler handler
                                       :kind :join
                                       :link-model link-model

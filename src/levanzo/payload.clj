@@ -456,7 +456,9 @@
 
 (defn u ([x] (str "<" (encode-uri x) ">")))
 (defn l ([l] (str "\"" l "\"")))
-(defn d ( [l t] (str "\"" l "\"^^" t)))
+(defn d ( [l t] (if (string/index-of t "://")
+                  (str "\"" l "\"^^" (u t))
+                  (str "\"" l "\"^^" t))))
 
 
 (defn ->trig [namespaces data]

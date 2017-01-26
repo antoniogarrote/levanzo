@@ -174,3 +174,7 @@
                (string/replace-first path "/" "")
                path)]
     (match path)))
+
+(defn api-routes
+  "Builds the routes of an API"
+  [routes] (process-routes routes))

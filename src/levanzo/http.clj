@@ -281,8 +281,7 @@
 
 
 (defn middleware [{:keys [api index mount-path routes documentation-path fragments-path] :as context}]
-  (let [routes (routing/process-routes routes)
-        validations-map (schema/build-api-validations api)
+  (let [validations-map (schema/build-api-validations api)
         context (merge context {:routes routes :validations-map validations-map})
         index (indexing/make-indexer api index)]
 

@@ -3,6 +3,7 @@
             [issues.db :as db]
             [levanzo.namespaces :refer [xsd hydra]]
             [levanzo.payload :as payload]
+            [levanzo.routing :as routing]
             [monger.operators :as mo]))
 
 (def post-user (fn [args body request]
@@ -159,43 +160,44 @@
                                                                     :required true}]}))
                           (payload/compact))))
 
-(def routes {:path [""]
-             :model api/EntryPoint
-             :handlers {:get get-entrypoint}
-             :nested [{:path ["issues"]
-                       :model (api/vocab "get-issues-link")
-                       :params {:page {:range (xsd "integer")
-                                       :required false}}
-                       :handlers {:get get-issues}
-                       :nested [{:path ["/" :issue-id]
-                                 :model api/Issue
-                                 :handlers {:get get-issue
-                                            :put put-issue
-                                            :delete delete-issue}
-                                 :nested [{:path ["/users/" :user-id]
-                                           :model (api/vocab "raised-by-link")
-                                           :handlers {:get get-user-for-issue}}]}]}
-                      {:path ["users"]
-                       :model (api/vocab "get-users-link")
-                       :params {:page {:range (xsd "integer")
-                                       :required false}}
-                       :handlers {:get get-users}
-                       :nested [{:path ["/" :user-id]
-                                 :model api/User
-                                 :handlers {:get get-user
-                                            :put put-user
-                                            :delete delete-user}
-                                 :nested [{:path "/raised_issues"
-                                           :model (api/vocab "raised-issues-link")
-                                           :handlers {:get get-issues-for-user
-                                                      :post post-issue-for-user}}]}]}
-                      {:path ["register-users"]
-                       :model (api/vocab "register-users-link")
-                       :handlers {:post post-user}}
-                      {:path ["search-users"]
-                       :params {:page {:range (xsd "integer")
-                                       :required false}
-                                :name {:range (xsd "string")
-                                       :required true}}
-                       :model (api/vocab "search-users-link")
-                       :handlers {:get get-search-users}}]})
+(def routes (routing/api-routes
+             {:path [""]
+              :model api/EntryPoint
+              :handlers {:get get-entrypoint}
+              :nested [{:path ["issues"]
+                        :model (api/vocab "get-issues-link")
+                        :params {:page {:range (xsd "integer")
+                                        :required false}}
+                        :handlers {:get get-issues}
+                        :nested [{:path ["/" :issue-id]
+                                  :model api/Issue
+                                  :handlers {:get get-issue
+                                             :put put-issue
+                                             :delete delete-issue}
+                                  :nested [{:path ["/users/" :user-id]
+                                            :model (api/vocab "raised-by-link")
+                                            :handlers {:get get-user-for-issue}}]}]}
+                       {:path ["users"]
+                        :model (api/vocab "get-users-link")
+                        :params {:page {:range (xsd "integer")
+                                        :required false}}
+                        :handlers {:get get-users}
+                        :nested [{:path ["/" :user-id]
+                                  :model api/User
+                                  :handlers {:get get-user
+                                             :put put-user
+                                             :delete delete-user}
+                                  :nested [{:path "/raised_issues"
+                                            :model (api/vocab "raised-issues-link")
+                                            :handlers {:get get-issues-for-user
+                                                       :post post-issue-for-user}}]}]}
+                       {:path ["register-users"]
+                        :model (api/vocab "register-users-link")
+                        :handlers {:post post-user}}
+                       {:path ["search-users"]
+                        :params {:page {:range (xsd "integer")
+                                        :required false}
+                                 :name {:range (xsd "string")
+                                        :required true}}
+                        :model (api/vocab "search-users-link")
+                        :handlers {:get get-search-users}}]}))

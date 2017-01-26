@@ -517,7 +517,7 @@
                {:resource (class-lookup people-db)
                 :properties {sorg-name  {:index (index-property people-db)}
                              sorg-email {:index (index-property people-db)}}
-                :join {person-address-link person-address-link-join}}
+                :links {person-address-link person-address-link-join}}
 
                sorg-PostalAddress
                {:properties {sorg-address {:index (index-property addresses-db)}

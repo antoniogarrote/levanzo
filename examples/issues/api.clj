@@ -80,7 +80,6 @@
                                    ::hydra/range (xsd "boolean")}))
 
 (def raised-by-prop (hydra/link {::hydra/id (vocab "raised_by")
-                                 ::hydra/property (vocab "raisedBy")
                                  ::hydra/title "raised_by"
                                  ::hydra/description "The user who raised the issue"}))
 

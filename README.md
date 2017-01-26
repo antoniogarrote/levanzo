@@ -1,14 +1,14 @@
-# levanzo [![CircleCI](https://circleci.com/gh/antoniogarrote/levanzo.svg?style=svg)](https://circleci.com/gh/antoniogarrote/levanzo)
+# Levanzo [![CircleCI](https://circleci.com/gh/antoniogarrote/levanzo.svg?style=svg)](https://circleci.com/gh/antoniogarrote/levanzo)
 
-Levanzo is Clojure library to build hypermedia driven RESTful APIs using W3C standards.
+Levanzo is a Clojure library to build hypermedia driven RESTful APIs using W3C standards.
 
 Levanzo supports the following features:
 
 - Declarative definition of resource classes
 - Generation of machine consumable API documentation and meta-data
 - Declarative support for validation constraints
-- Generation of compatible HTTP middleware for the declared API and link generation functions
-- Support for API indices generation that can be used in queries over the API data graph
+- Generation of ring compatible HTTP middleware for the declared API and link generation functions
+- Support for API data graph queries
 
 The library is built on top of the following list of W3C standards and standard proposals:
 
@@ -36,14 +36,16 @@ The full source code of the example can be found in [`examples/people.clj`](exam
 
 ### 1. Setting up your API namespace
 
-One of the main problems with API specification languages like RAML or OpenAPI is that they use flat namespaces and plain strings as identifiers. This makes very difficult to achieve certain use cases like re-using API descriptions or extending the specification.
+One of the main problems with API specification languages like RAML or OpenAPI is that they use flat namespaces and plain strings as identifiers. This makes it very difficult to achieve certain use cases like re-using API descriptions or extending the specification.
 
-Levanzo on the other hand uses [Hydra](http://www.hydra-cg.com/spec/latest/core/) as its specification 'vocabulary' that has at its core the RDF data model. This means that identifiers for every single element in the API descriptions are namespaced and uniquely identified by an URI. This also means that you can re-use the terms and meaning of other vocabularies in your API.
-For example, you could (and should if the meaning matches your application domain) use terms from the Schema.org vocabulary to build the resources of your API.
+Levanzo uses [Hydra](http://www.hydra-cg.com/spec/latest/core/) as its specification 'vocabulary'. Hydra has at its core the RDF data model. This means that identifiers for every single element in the API description are namespaced and uniquely identified by URIs. This also means that you can re-use the terms and meaning of other vocabularies in your API.
 
-The trade-off of using URIs as identifiers instead of strings is that it they are more verbose and working with then can become quite cumbersome.
+For example, you could (and you should if the semantics matches your application domain) use terms from the Schema.org vocabulary to build the resources of your API.
 
-Levanzo includes some functions in the namespace `levanzo.namespaces` to make it easier to work with URIs in the API specification as well as to work with [compact URIs](https://www.w3.org/TR/curie/) or CURIEs that can reduce the complexity of dealing with URIs as identifiers.
+The trade-off of using URIs as identifiers instead of strings is that they are more verbose and working with them can become quite cumbersome.
+
+Levanzo includes some functions in the namespace `levanzo.namespaces` to make it easier to work with URIs in the API specification, as well as to work with [compact URIs](https://www.w3.org/TR/curie/) or CURIEs. 
+This functionality can reduce the complexity of dealing with URIs as identifiers.
 
 Setting up the name-spaces for the vocabularies you are going to use in your API should be the first task you need to address when working with Levanzo.
 
@@ -83,7 +85,8 @@ Certain namespaces are already declared in *levanzo.namespaces*, you don't need 
 
 ### 2. Describing your API: declaring resources
 
-Now that we have a namespace, we can start adding definitions to it. The namespace `levanzo.hydra` includes the functions required to declare the components of your API.
+Now that we have a namespace, we can start adding definitions to it. 
+The namespace `levanzo.hydra` includes the functions required to declare the components of your API.
 
 The simplest building block in Levanzo is a property.
 
@@ -110,11 +113,11 @@ The following snippet from the example API declares the [Schema.org streetAddres
                                            ::hydra/range xsd/string}))
 ```
 In the example, other options for a property like the `title` and `description` are also provided. To see a complete list of arguments, check the documentation for the `hydra/property` function.
-The `levanzo.hydra/id` function can be used to extract the URI ID of a component of the Hydra model.
+The `levanzo.hydra/id` function can be used to extract the URI ID of a component from the Hydra model.
 
 Levanzo is built using [Clojure Spec](https://clojure.org/about/spec), that's the reason you will see so many namespaced keywords in the library.
 
-The next important Hydra concept after properties is the notion of [Hydra classes](http://www.hydra-cg.com/spec/latest/core/#hydra:Class). Classes are collection of resources with shared semantics, meaning by shared semantics that they are described using the same set of properties.
+The next important Hydra concept after properties is the notion of [Hydra classes](http://www.hydra-cg.com/spec/latest/core/#hydra:Class). Classes are collections of resources with shared semantics, meaning by shared semantics that they are described using the same set of properties.
 To group the properties of a Hydra class we use the `levanzo.hydra/supported-property` function. `supported-property` allows us to describe some constraints about properties when they are used to describe instances of that Hydra class. Examples of constraints are [`::hydra/required`](http://www.hydra-cg.com/spec/latest/core/#hydra:required), [`::hydra/readonly`]((http://www.hydra-cg.com/spec/latest/core/#hydra:readonly)) and [`::hydra/writeonly`]((http://www.hydra-cg.com/spec/latest/core/#hydra:writeonly)).
 
 This information, plus the range of the property will be used by Levanzo to perform constraint validations on incoming data.
@@ -241,7 +244,7 @@ All the validation functionality is in the `levanzo.schema` namespace. The funct
 
 The output of this function is a map, with classes URIs as keys and validation error descriptions as value if the instance is invalid or nil if the document is valid for that class. All the declared classes in the JSON-LD instance will be checked for constraints.
 
-The following snippet shows the validation of different instances of the Person and PostalAddress classes:
+The following snippet shows the validation of different instances for the Person and PostalAddress classes:
 
 ``` clojure
 (require '[levanzo.schema :as schema])
@@ -326,7 +329,7 @@ The following snippet shows the validation of different instances of the Person 
                         {:supported-classes [sorg-Person]})
 ```
 
-Future versions of the library will add support for more sophisticated declarative validations adding support for SHACL.
+Future versions of the library will add support for more sophisticated declarative validations with SHACL.
 
 Another interesting features of Levanzo when working with payloads is the integraction with `clojure.spec` in order to sample generated instances of a particular class.
 A Generator for any API class can be obtained using the functions in the `levanzo.spec.schema` namespace.
@@ -446,7 +449,7 @@ Relationships between classes become HTTP links between instances of these class
 
 In this section we will show how to declare the HTTP bindings for the classes and instances of an API and how to use that information to generate URIs that can be used to identify instances as well as to generate HTTP links between instances.
 
-But before defining the bindings let's declare the list of classes that are part of our API as well as to establish an entry-point for clients accessing the resources.
+But before defining the bindings let's declare the list of classes that are part of our API. We will also declare an entry-point for clients accessing the resources.
 We can use the `levanzo.hydra/api` function for it:
 
 ``` clojure
@@ -653,7 +656,7 @@ There are 3 main types of index that can be declared per Hydra class in the API:
 
 - resource index: for a particular subject, returns the matching resource
 - property index: for a particular predicate and optional object, returns all instances of the class with a property (and value if requested) matching the predicate and object
-- join index: for a particular subject, predicate and list of objects, where the predicate matches a link property, returns all the objects where link has been established or all the link values if the list of objects is null.
+- join index: for a pair [subject?, object?] and a predicate, where the predicate matches a link property, return all the possible values subject and object linked by predicate.
 
 With this indexing information Levanzo will generate the Triple Pattern Fragments interface to satisfy different pattern queries. This also means that API developers can control which information acn be queried, defining indexing information only for the classes and properties that are feasible or allowed. The indexing function also receive a full ring HTTP request that can be used to check constraints like authentication over the resources being indexed.
 

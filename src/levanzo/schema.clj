@@ -65,7 +65,9 @@
     (xsd "decimal") (int? (get value "@value"))
     (xsd "float")   (float? (get value "@value"))
     (xsd "boolean") (boolean? (get value "@value"))
-    (throw (Exception. (str "Unknown/not implemented xsd validation for type " range)))))
+    true
+    ;;(throw (Exception. (str "Unknown/not implemented xsd validation for type " range)))
+    ))
 
 
 (s/fdef check-range

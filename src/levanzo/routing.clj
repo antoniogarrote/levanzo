@@ -13,8 +13,11 @@
                :empty-path    (s/with-gen #(= % "")
                                 #(tg/return ""))
                :simple-path ::jsonld-spec/path
-               :complex-path (s/coll-of (s/or :path ::jsonld-spec/path
-                                              :var  keyword?))))
+               :complex-path (s/coll-of (s/or
+                                         :empty-path (s/with-gen #(= % "")
+                                                       #(tg/return ""))
+                                         :path ::jsonld-spec/path
+                                         :var  keyword?))))
 
 
 (s/def ::model (s/or :class ::hydra/SupportedClass

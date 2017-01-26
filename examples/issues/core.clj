@@ -3,6 +3,8 @@
             [issues.routes :as routes]
             [issues.db :as db]
             [issues.config :as config]
+            [issues.indexing :as indexing]
+            [levanzo.http :as http]
             [levanzo.payload :as payload]
             [levanzo.routing :as routing]
             [levanzo.namespaces :refer [xsd hydra]]
@@ -10,8 +12,33 @@
             [org.httpkit.server :as http-kit]
             [monger.collection :as mc]))
 
-(defn start-server []
-  (http-kit/run-server routes/middleware {:port config/port}))
+(clojure.spec/check-asserts true)
+
+(defn cors-enabled [middleware]
+  (fn [request]
+    (let [response (middleware request)
+          headers (:headers response)
+          headers (assoc headers "Access-Control-Allow-Origin" "*")
+          response (assoc response :headers headers)]
+      response)))
+
+(def middleware (http/middleware {:api api/API
+                                  :index indexing/indices
+                                  :routes routes/routes
+                                  :mount-path "/"
+                                  :documentation-path "/vocab"
+                                  :fragments-path "/index"}))
+
+(def stop-server-ref (atom nil))
+
+(defn start-api []
+  (swap! stop-server-ref
+         (fn [_] (http-kit/run-server (cors-enabled middleware) {:port config/port}))))
+
+(defn stop-api [] (when (some? @stop-server-ref) (@stop-server-ref)))
+
+;;(start-api)
+;;(stop-api)
 
 (deftest api-operations-test
   (mc/remove db/db "issues" {})

@@ -10,7 +10,8 @@
 
 (deftest check-xsd-range-test
   (spec-utils/check-symbol `schema/check-xsd-range)
-  (is (thrown? Exception (schema/check-xsd-range "http://test.com/foo" {"@value" "test"}))))
+  ;(is (thrown? Exception (schema/check-xsd-range "http://test.com/foo" {"@value" "test"})))
+  )
 
 (deftest check-range-test
   (spec-utils/check-symbol `schema/check-range))

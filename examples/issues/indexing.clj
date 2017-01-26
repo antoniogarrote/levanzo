@@ -26,11 +26,12 @@
 
 (defn find-all
   ([collection {:keys [page per-page]} condition]
-   (->> (mquery/with-collection db/db collection
-          (mquery/find condition)
-          (mquery/skip (* (dec page) per-page))
-          (mquery/limit per-page))
-        (map db/bson->json)))
+   {:results (->> (mquery/with-collection db/db collection
+                    (mquery/find condition)
+                    (mquery/skip (* (dec page) per-page))
+                    (mquery/limit per-page))
+                  (map db/bson->json))
+    :count (mc/count db/db collection condition)})
   ([collection pagination] (find-all collection {} pagination)))
 
 (defn filter-property [collection property]
@@ -41,7 +42,8 @@
 (defn lookup-resource [collection]
   (fn [{:keys [subject request]}]
     (let [id (relative-url subject)]
-      (db/find-one collection id))))
+      {:results [(db/find-one collection id)]
+       :count 1})))
 
 (defn collection-join
   ([collection join-condition]
@@ -79,20 +81,21 @@
 (def issues-join (collection-join "issues"))
 
 
-(def indices {api/User {:resource users-resource-lookup
+(def indices (indexing/api-index
+              {api/User {:resource users-resource-lookup
 
-                        :properties {api/name-prop {:index users-name-index}
-                                     api/email-prop {:index users-email-index}}
-                        :join {(api/vocab "raised-issues-link") raised-issues-join}}
+                         :properties {api/name-prop {:index users-name-index}
+                                      api/email-prop {:index users-email-index}}
+                         :join {(api/vocab "raised-issues-link") raised-issues-join}}
 
-              api/Issue {:resource issues-resource-lookup
+               api/Issue {:resource issues-resource-lookup
 
-                         :properties {api/is-open-prop {:index issues-is-open-index}
-                                      api/raised-by-prop {:index issues-raised-by-index}}
+                          :properties {api/is-open-prop {:index issues-is-open-index}
+                                       api/raised-by-prop {:index issues-raised-by-index}}
 
-                         :join {(api/vocab "get-users-link") users-join}}
+                          :join {(api/vocab "get-users-link") users-join}}
 
-              api/EntryPoint {:join {(api/vocab "get-issues-link") issues-join}}})
+               api/EntryPoint {:join {(api/vocab "get-issues-link") issues-join}}}))
 
 (deftest indices-test
 

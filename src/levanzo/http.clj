@@ -109,7 +109,7 @@
     (let [_ (log/debug "Validating response for method " method)
           predicate (find-returns-validation validations-map method model)
           _ (log/debug "Found validation predicates " (some? predicate))
-          errors (if (some? predicate) (predicate mode validations-map body) [])]
+          errors (if (some? predicate) (predicate mode validations-map (payload/expand body)) [])]
       (if (empty? errors)
         (do
           (log/debug "No validation errors found in response")

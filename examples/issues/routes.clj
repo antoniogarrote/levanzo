@@ -1,27 +1,28 @@
 (ns issues.routes
   (:require [issues.api :as api]
             [issues.db :as db]
-            [levanzo.http :as http]
             [levanzo.namespaces :refer [xsd hydra]]
             [levanzo.payload :as payload]
             [monger.operators :as mo]))
 
 (def post-user (fn [args body request]
-                 (db/save "users"
-                          #(-> body
-                               (payload/merge-jsonld
-                                (payload/jsonld
-                                 (payload/id {:model api/User
-                                              :args {:user-id %}})
-                                 (payload/type api/User)
-                                 (payload/supported-link {:property api/raised-issues-prop
-                                                          :model (api/vocab "raised-issues-link")
-                                                          :args {:user-id %}})))))))
+                 (-> (db/save "users"
+                              #(-> body
+                                   (payload/merge-jsonld
+                                    (payload/jsonld
+                                     (payload/id {:model api/User
+                                                  :args {:user-id %}})
+                                     (payload/type api/User)
+                                     (payload/supported-link {:property api/raised-issues-prop
+                                                              :model (api/vocab "raised-issues-link")
+                                                              :args {:user-id %}})))))
+                     payload/compact
+                     (dissoc "password"))))
 
 
 (def get-users (fn [{:keys [page] :or {page "1"}} body request]
                  (let [page (Integer/parseInt page)
-                       users (db/find-all "users" page)]
+                       users (map #(dissoc % "password") (db/find-all "users" page))]
                    (-> (payload/jsonld (payload/id {:model (api/vocab "get-users-link")})
                                        (payload/type api/UsersCollection)
                                        (payload/title "Users Collection")
@@ -53,7 +54,8 @@
                                                                      :previous (if (> page 1) (dec page) nil)}))
                               (payload/compact)))))
 
-(def get-user (fn [args body request] (db/find-one "users" (payload/link-for {:model api/User :args args}))))
+(defn trace [x] (prn x) x)
+(def get-user (fn [args body request] (trace (dissoc (db/find-one "users" (payload/link-for {:model api/User :args args})) "password"))))
 
 (def put-user (fn [args body request]
                 (->> (payload/link-for {:model api/User :args args})
@@ -75,7 +77,13 @@
                                   (payload/type api/IssuesCollection)
                                   (payload/title "Issues Collection")
                                   (payload/members (map payload/expand issues))
-                                  (payload/total-items (count issues)))
+                                  (payload/total-items (count issues))
+                                  (payload/partial-view {:model (api/vocab "raised-issues-link")
+                                                         :args args
+                                                         :current page
+                                                         :pagination-param "page"
+                                                         :next (inc page)
+                                                         :previous (if (> page 1) (dec page) nil)}))
                                  (payload/compact)))))
 
 (def delete-user (fn [args body request]
@@ -117,7 +125,7 @@
                         (payload/compact {:context true})))))
 
 
-(def get-issue (fn [args body request] (db/find-one (payload/link-for {:model api/Issue :args args}))))
+(def get-issue (fn [args body request] (db/find-one "issues" (payload/link-for {:model api/Issue :args args}))))
 
 (def put-issue (fn [args body request]
                  (->> (payload/link-for {:model api/Issue :args args})
@@ -191,8 +199,3 @@
                                        :required true}}
                        :model (api/vocab "search-users-link")
                        :handlers {:get get-search-users}}]})
-
-(def middleware (http/middleware {:api api/API
-                                  :routes routes
-                                  :entrypoint-path "/"
-                                  :documentation-path "/vocab"}))

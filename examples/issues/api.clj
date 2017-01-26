@@ -44,7 +44,10 @@
                                                                                  ::hydra/operations
                                                                                  [(hydra/get-operation
                                                                                    {::hydra/returns (vocab "IssuesCollection")
-                                                                                    ::hydra/description "Retrieves the issues raised by a User entity"})]})]
+                                                                                    ::hydra/description "Retrieves the issues raised by a User entity"})
+                                                                                  (hydra/post-operation {::hydra/expects (vocab "Issue")
+                                                                                                         ::hydra/returns (vocab "Issue")
+                                                                                                         ::hydra/description "Creates a new issue for a user"})]})]
                         ::hydra/operations [(hydra/get-operation {::hydra/returns (vocab "User")
                                                                   ::hydra/id (vocab "user_retrieve")
                                                                   ::hydra/description "Retrieves a User entity"})
@@ -95,10 +98,7 @@
                                                                                   ::hydra/readonly true
                                                                                   ::hydra/operations
                                                                                   [(hydra/get-operation {::hydra/returns (vocab "User")
-                                                                                                         ::hydra/description "Retrieves a User entity"})
-                                                                                   (hydra/post-operation {::hydra/expects (vocab "Issue")
-                                                                                                          ::hydra/returns (vocab "Issue")
-                                                                                                          ::hydra/description "Creates a new issue for a user"})]})]
+                                                                                                         ::hydra/description "Retrieves a User entity"})]})]
                          ::hydra/operations [(hydra/get-operation {::hydra/returns (vocab "Issue")
                                                                    ::hydra/id (vocab "issue_retrieve")
                                                                    ::hydra/description "Retrieves a Issue entity"})

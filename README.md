@@ -20,7 +20,7 @@ The library is built on top of the following list of W3C standards and standard 
 
 An example implementation of the Markus Lanthaler's Issues API using MongoDB as the backend [can be found in the examples](examples/issues).
 The API console for the demo is deployed [here](http://antoniogarrote.com:8080/).
-The Triple Pattern Fragments client for the demo can be found [here](http://antoniogarrote.com:3000/).
+The Triple Pattern Fragments client for the demo can be found [here](http://antoniogarrote.com/fragments).
 
 Levanzo uses Clojure Spec, you will need the development version of Clojure 1.9 to use the library.
 The library can be found in Clojars:
@@ -44,7 +44,7 @@ For example, you could (and you should if the semantics matches your application
 
 The trade-off of using URIs as identifiers instead of strings is that they are more verbose and working with them can become quite cumbersome.
 
-Levanzo includes some functions in the namespace `levanzo.namespaces` to make it easier to work with URIs in the API specification, as well as to work with [compact URIs](https://www.w3.org/TR/curie/) or CURIEs. 
+Levanzo includes some functions in the namespace `levanzo.namespaces` to make it easier to work with URIs in the API specification, as well as to work with [compact URIs](https://www.w3.org/TR/curie/) or CURIEs.
 This functionality can reduce the complexity of dealing with URIs as identifiers.
 
 Setting up the name-spaces for the vocabularies you are going to use in your API should be the first task you need to address when working with Levanzo.
@@ -85,7 +85,7 @@ Certain namespaces are already declared in *levanzo.namespaces*, you don't need 
 
 ### 2. Describing your API: declaring resources
 
-Now that we have a namespace, we can start adding definitions to it. 
+Now that we have a namespace, we can start adding definitions to it.
 The namespace `levanzo.hydra` includes the functions required to declare the components of your API.
 
 The simplest building block in Levanzo is a property.
@@ -681,30 +681,45 @@ The following code snippet shows a toy implementation of the indexing functions 
       {:results (paginate-values values pagination)
        :count (count values)})))
 
+;; arguments are an optional subject URI string and and optional object URI string
 (defn person-address-link-join [{:keys [subject object pagination]}]
-  (let [subject (->> @people-db
-                     vals
-                     (filter #(= (get % "@id") subject))
-                     first)]
-    {:results (if (and (some? subject)
-                       (= (:page pagination) 1))
-                (let [joined-address (-> subject (get (hydra/id sorg-address)) first (get "@id"))
-                      address (->> @addresses-db
-                                   vals
-                                   (filter #(= (get % "@id") joined-address))
-                                   first)]
-                  (if (some? object)
-                    (if (= (get object "@id") (get address "@id"))
-                      [{:subject subject
-                        :object address}]
-                      [])
-                    [{:subject subject
-                      :address address}]))
-                (->> @addresses-db
-                     (map (fn [address]
-                            {:subject {"@id" (string/replace (get address "@id") "/address" "")}
-                             :object address}))))
-     :count 1}))
+  (cond
+    (and (some? subject) (some? object))(let [found (->> @addresses-db
+                                                         vals
+                                                         (filter #(and (= (get % "@id")
+                                                                         object)
+                                                                      (string/starts-with? object subject)))
+                                                         first)]
+                                          (if (some? found)
+                                            {:results [{:subject {"@id" subject}
+                                                        :object {"@id" object}}]
+                                             :count 1}
+                                            {:results []
+                                             :count 0}))
+    (and (some? subject) (nil? object)) (let [object (->> @addresses-db
+                                                          vals
+                                                          (filter #(string/starts-with? (get % "@id") subject))
+                                                          first)]
+                                          (if (some? object)
+                                            {:results [{:subject {"@id" subject}
+                                                        :object object}]
+                                             :count 1}))
+    (and (nil? subject) (some? object))  (let [subject (->> @people-db
+                                                           vals
+                                                           (filter #(string/starts-with? object (get % "@id")))
+                                                           first)]
+                                           (if (some? subject)
+                                             {:results [{:subject subject
+                                                         :object object}]
+                                              :count 1}))
+    (and (nil? subject) (nil? object))   (let [results (->> @addresses-db
+                                                            (map (fn [address] {:subject (get address "@id")
+                                                                               :object (get address (hydra/id sorg-address))}))
+                                                            (map (fn [{:keys [ subject object]}]
+                                                                   {:subject {"@id" subject}
+                                                                    :object {"@id" object}})))]
+                                           {:results (paginate-values results pagination)
+                                            :count (count @addresses-db)})))
 
 (defn class-lookup [collection]
   (fn [{:keys [subject]}] (if-let [result (get (deref collection) subject)]
@@ -712,7 +727,8 @@ The following code snippet shows a toy implementation of the indexing functions 
                            {:results [] :count 1})))
 ```
 
-Indexing functions receive pagination information and a map with value for subject, object and predicate values as plain strings or JSON-LD style values in the case of the object component.
+Indexing functions receive pagination information and a map with value for subject, object and predicate values as plain strings.
+The object can be a map with a JSON-LD value in the case of the resource and property index, or a plain string in thecase of the join index.
 They need to return a map with paginated results and a count of the total matches. The count can be an estimation.
 
 Now we can associate the index functions to components in the API model using the `levanzo.indexing/api-index` function:

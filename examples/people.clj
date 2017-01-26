@@ -488,30 +488,45 @@
       {:results (paginate-values values pagination)
        :count (count values)})))
 
+;; argumeents are an optional subject URI string and and optional object URI string
 (defn person-address-link-join [{:keys [subject object pagination]}]
-  (let [subject (->> @people-db
-                     vals
-                     (filter #(= (get % "@id") subject))
-                     first)]
-    {:results (if (and (some? subject)
-                       (= (:page pagination) 1))
-                (let [joined-address (-> subject (get (hydra/id sorg-address)) first (get "@id"))
-                      address (->> @addresses-db
-                                   vals
-                                   (filter #(= (get % "@id") joined-address))
-                                   first)]
-                  (if (some? object)
-                    (if (= (get object "@id") (get address "@id"))
-                      [{:subject subject
-                        :object address}]
-                      [])
-                    [{:subject subject
-                      :address address}]))
-                (->> @addresses-db
-                     (map (fn [address]
-                            {:subject {"@id" (string/replace (get address "@id") "/address" "")}
-                             :object address}))))
-     :count 1}))
+  (cond
+    (and (some? subject) (some? object))(let [found (->> @addresses-db
+                                                         vals
+                                                         (filter #(and (= (get % "@id")
+                                                                         object)
+                                                                      (string/starts-with? object subject)))
+                                                         first)]
+                                          (if (some? found)
+                                            {:results [{:subject {"@id" subject}
+                                                        :object {"@id" object}}]
+                                             :count 1}
+                                            {:results []
+                                             :count 0}))
+    (and (some? subject) (nil? object)) (let [object (->> @addresses-db
+                                                          vals
+                                                          (filter #(string/starts-with? (get % "@id") subject))
+                                                          first)]
+                                          (if (some? object)
+                                            {:results [{:subject {"@id" subject}
+                                                        :object object}]
+                                             :count 1}))
+    (and (nil? subject) (some? object))  (let [subject (->> @people-db
+                                                           vals
+                                                           (filter #(string/starts-with? object (get % "@id")))
+                                                           first)]
+                                           (if (some? subject)
+                                             {:results [{:subject subject
+                                                         :object object}]
+                                              :count 1}))
+    (and (nil? subject) (nil? object))   (let [results (->> @addresses-db
+                                                            (map (fn [address] {:subject (get address "@id")
+                                                                               :object (get address (hydra/id sorg-address))}))
+                                                            (map (fn [{:keys [ subject object]}]
+                                                                   {:subject {"@id" subject}
+                                                                    :object {"@id" object}})))]
+                                           {:results (paginate-values results pagination)
+                                            :count (count @addresses-db)})))
 
 (defn class-lookup [collection]
   (fn [{:keys [subject]}] (if-let [result (get (deref collection) subject)]
@@ -573,8 +588,8 @@
   (person-address-link-join  {:subject (payload/link-for {:model sorg-Person
                                                           :args {:person-id 1}
                                                           :base base})
-                              :object [(payload/link-for {:model person-address-link
-                                                          :args {:person-id 1}
-                                                          :base base})]
+                              :object (payload/link-for {:model person-address-link
+                                                         :args {:person-id 1}
+                                                         :base base})
                               :pagination {:page 1 :per-page 5}})
   )

@@ -109,28 +109,31 @@
                                                             (hydra/supported-property {::hydra/property (hydra/property  {::hydra/id "http://xmlns.com/foaf/0.1/age"
                                                                                                                           ::hydra/range "http://www.w3.org/2001/XMLSchema#decimal"})})]}))
 (deftest class-jsonld-tests
-  (is (= {"@id" "http://test.com#MyClass"
-          "@type" "http://www.w3.org/ns/hydra/core#Class"
-          "http://www.w3.org/ns/hydra/core#title" "MyClass"
-          "http://www.w3.org/ns/hydra/core#description" "Test class"
+  (is (= {"@type" "http://www.w3.org/ns/hydra/core#Class",
           "http://www.w3.org/ns/hydra/core#supportedProperty"
-          [{"@type" "http://www.w3.org/ns/hydra/core#SupportedProperty"
+          [{"@type" "http://www.w3.org/ns/hydra/core#SupportedProperty",
             "http://www.w3.org/ns/hydra/core#property"
-            {"@id" "http://xmlns.com/foaf/0.1/name"
-             "@type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-             "http://www.w3.org/2000/01/rdf-schema#range" {"@id" "http://www.w3.org/2001/XMLSchema#string"}}
-            "http://www.w3.org/ns/hydra/core#supportedOperation" []
+            {"@id" "http://xmlns.com/foaf/0.1/name",
+             "@type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
+             "http://www.w3.org/2000/01/rdf-schema#range"
+             {"@id" "http://www.w3.org/2001/XMLSchema#string"},
+             "http://www.w3.org/ns/hydra/core#supportedOperation" []},
             "http://www.w3.org/ns/hydra/core#required" true}
-           {"@type" "http://www.w3.org/ns/hydra/core#SupportedProperty"
+           {"@type" "http://www.w3.org/ns/hydra/core#SupportedProperty",
             "http://www.w3.org/ns/hydra/core#property"
-            {"@id" "http://xmlns.com/foaf/0.1/age"
-             "@type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"
-             "http://www.w3.org/2000/01/rdf-schema#range" {"@id" "http://www.w3.org/2001/XMLSchema#decimal"}}
-            "http://www.w3.org/ns/hydra/core#supportedOperation" []}]
+            {"@id" "http://xmlns.com/foaf/0.1/age",
+             "@type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
+             "http://www.w3.org/2000/01/rdf-schema#range"
+             {"@id" "http://www.w3.org/2001/XMLSchema#decimal"},
+             "http://www.w3.org/ns/hydra/core#supportedOperation" []}}],
           "http://www.w3.org/ns/hydra/core#supportedOperation"
-          [{"@type" "http://www.w3.org/ns/hydra/core#Operation"
-            "http://www.w3.org/ns/hydra/core#method" "DELETE"
-            "http://www.w3.org/ns/hydra/core#title" "Destroys a MyClass instance"}]}
+          [{"@type" "http://www.w3.org/ns/hydra/core#Operation",
+            "http://www.w3.org/ns/hydra/core#method" "DELETE",
+            "http://www.w3.org/ns/hydra/core#title"
+            "Destroys a MyClass instance"}],
+          "@id" "http://test.com#MyClass",
+          "http://www.w3.org/ns/hydra/core#title" "MyClass",
+          "http://www.w3.org/ns/hydra/core#description" "Test class"}
          (hydra/->jsonld test-class))))
 
 (deftest collection-jsonld-tests

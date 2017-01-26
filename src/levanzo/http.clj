@@ -3,6 +3,7 @@
             [levanzo.routing :as routing]
             [levanzo.schema :as schema]
             [levanzo.hydra :as hydra]
+            [levanzo.indexing :as indexing]
             [levanzo.namespaces :as lns]
             [clojure.string :as string]
             [cheshire.core :as json]
@@ -108,7 +109,7 @@
     (let [_ (log/debug "Validating response for method " method)
           predicate (find-returns-validation validations-map method model)
           _ (log/debug "Found validation predicates " (some? predicate))
-          errors (predicate mode validations-map body)]
+          errors (if (some? predicate) (predicate mode validations-map body) [])]
       (if (empty? errors)
         (do
           (log/debug "No validation errors found in response")
@@ -124,7 +125,7 @@
       (let [_ (log/debug "Validating request for method " method)
             predicate (find-expects-validation validations-map method model)
             _ (log/debug "Found validation predicates " (some? predicate))
-            errors (predicate mode validations-map body)]
+            errors (if (some? predicate) (predicate mode validations-map body) [])]
         (log/debug "Request valid? " (empty? errors))
         (if (empty? errors)
           (continuation (assoc request :body body))
@@ -139,18 +140,21 @@
                        response
                        {:body response})
         status (:status response-map 200)]
-    (-> response-map
-        (assoc :status (:status response-map 200))
-        (assoc :headers (:headers response-map {}))
-        (validate-response validations-map mode method model)
-        (response->jsonld context)
-        (assoc :status status))))
+    (if (= status 200)
+      (-> response-map
+          (assoc :headers (:headers response-map {}))
+          (validate-response validations-map mode method model)
+          (response->jsonld context)
+          (assoc :status status))
+      response-map)))
 
 (defn get-handler [request route-params handler context]
   (try
+    (log/debug "Executing GET handler")
     (let [response (handler route-params
                             nil
                             request)]
+      (log/debug "Got a response")
       (process-response response :read context))
     (catch Exception ex
       (log/error ex)
@@ -214,6 +218,29 @@
     :body (assoc (hydra/->jsonld api) "@context" (payload/context))}
    api))
 
+(defn fragments-handler [request {:keys [subject predicate object] :as params-map} index]
+  (log/debug "API Fragments request")
+  (log/debug params-map)
+  (let [pattern {:s (when (some? subject) {"@id" subject})
+                 :p (when (some? predicate) {"@id" predicate})
+                 :o (when (some? object) (payload/parse-triple-component object))}]
+    (if (or (some? (:s pattern)) (some? (:p pattern)) (some? (:o pattern))) ;; are they requesting the base uri?
+      (let [page (:page params-map "1")
+            group (:group params-map "0")
+            per-page (:per-page params-map "50")
+            page (Integer/parseInt page)
+            group(Integer/parseInt group)
+            per-page (Integer/parseInt per-page)
+            pagination {:page (or page (inc page)) :per-page per-page :group group}
+            results-map (index pattern
+                               pagination
+                               request)]
+        ;; generating the actual RDF response in Trix format
+        (indexing/index-response params-map results-map request))
+      ;; the client is retrieving the base case for the fragments, we just return meta-data
+      (indexing/index-response params-map {} request)
+      )))
+
 (defn base-url [{:keys [server-port scheme server-name]}]
   (str (name scheme) "://"
        server-name
@@ -252,40 +279,44 @@
            first)
       nil)))
 
-(defn middleware [{:keys [entrypoint-path api routes documentation-path] :as context}]
+
+(defn middleware [{:keys [api index mount-path routes documentation-path fragments-path] :as context}]
   (let [routes (routing/process-routes routes)
         validations-map (schema/build-api-validations api)
-        context (merge context {:routes routes :validations-map validations-map})]
+        context (merge context {:routes routes :validations-map validations-map})
+        index (indexing/make-indexer api index)]
 
     (fn [{:keys [uri body request-method query-string] :as request}]
       (log/debug (str "Processing request " request-method " :: " uri))
       (log/debug "Query string: " query-string)
       (log/debug "Body: "body)
+      (log/debug "Mountpoint " mount-path)
       (let [request-params  (params-map query-string)
             context (assoc context :request-params request-params)]
-        (if (= uri documentation-path)
-          (documentation-handler api)
-          (let [route (string/replace-first uri entrypoint-path "")
-                handler-info (routing/match route)]
-            (if (some? handler-info)
-              (let [{:keys [handlers route-params params model]
-                     :or {route-params {} params {}}} handler-info
-                    context (-> context
-                                (assoc :base-url (base-url request))
-                                (assoc :model (find-model model api))
-                                (assoc :method request-method))
-                    route-params (merge route-params request-params)
-                    handler (get handlers request-method)]
-                (log/debug (str "Model "(-> model :common-props ::hydra/id) " :: " (get context :model)))
-                (cond
-                  (nil? handler)                            (->405 (str "Method " request-method " not supported"))
-                  (not (valid-params? route-params params)) (->422 "Invalid request parameters")
-                  :else (condp = request-method
-                          :get    (get-handler request route-params handler context)
-                          :head   (head-handler request route-params handler context)
-                          :post   (post-handler request route-params handler context)
-                          :put    (put-handler request route-params handler context)
-                          :patch  (patch-handler request route-params handler context)
-                          :delete (delete-handler request route-params handler context)
-                          :else (->405 (str "Method " request-method " not supported")))))
-              (->404 "Cannot find the requested resource"))))))))
+        (cond
+          (= uri documentation-path) (documentation-handler api)
+          (= uri fragments-path)     (fragments-handler request request-params index)
+          :else (let [route (string/replace-first uri mount-path "")
+                      handler-info (routing/match route)]
+                  (if (some? handler-info)
+                    (let [{:keys [handlers route-params params model]
+                           :or {route-params {} params {}}} handler-info
+                          context (-> context
+                                      (assoc :base-url (base-url request))
+                                      (assoc :model (find-model model api))
+                                      (assoc :method request-method))
+                          route-params (merge route-params request-params)
+                          handler (get handlers request-method)]
+                      (log/debug (str "Model "(-> model :common-props ::hydra/id) " :: " (get context :model)))
+                      (cond
+                        (nil? handler)                            (->405 (str "Method " request-method " not supported"))
+                        (not (valid-params? route-params params)) (->422 "Invalid request parameters")
+                        :else (condp = request-method
+                                :get    (get-handler request route-params handler context)
+                                :head   (head-handler request route-params handler context)
+                                :post   (post-handler request route-params handler context)
+                                :put    (put-handler request route-params handler context)
+                                :patch  (patch-handler request route-params handler context)
+                                :delete (delete-handler request route-params handler context)
+                                :else (->405 (str "Method " request-method " not supported")))))
+                    (->404 "Cannot find the requested resource"))))))))

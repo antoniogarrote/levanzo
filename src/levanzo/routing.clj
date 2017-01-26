@@ -19,6 +19,7 @@
 
 (s/def ::model (s/or :class ::hydra/SupportedClass
                      :collection ::hydra/Collection
+                     :link ::hydra/SupportedProperty
                      :id ::hydra/id))
 
 (s/def ::handlers (s/map-of #{:get :put :post :delete :patch}

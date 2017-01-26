@@ -71,40 +71,55 @@
                         (get options "@id")
                         (s/gen ::jsonld-spec/uri))))))
 
+(defn make-collection-gen [mode class api options]
+  (let [member-class (:member-class class)
+        member-gen (if member-class
+                     (make-payload-gen mode (hydra/find-model api member-class) api options)
+                     (tg/fmap (fn [uri] {"@id" uri})
+                              (s/gen ::jsonld-spec/uri)))]
+    (with-gen-id
+      (tg/fmap (fn [elements]
+                 {"@type" (-> class :common-props ::hydra/id)
+                  (resolve "hydra:member") elements})
+               (tg/vector member-gen 1 5))
+      options)))
+
 (defn make-payload-gen
   ([mode class api] (make-payload-gen mode class api {}))
   ([mode class api options]
-   (with-gen-id
-     (tg/fmap (fn [properties]
-                (let [m (->> properties
-                             ;; remove properties not valid for the read mode, they
-                             ;; have been marked as nil
-                             (filter some?)
-                             ;; build the JSON-LD values
-                             (map (fn [[k v]]
-                                    (if (nil? v)
-                                      [k []]
-                                      (if (string? v)
-                                        [k [{"@id" v}]]
-                                        [k [v]]))))
-                             ;; collect the JSON-LD object
-                             (into {}))]
-                  (-> m
-                      (assoc "@id" "http://test.com/generated")
-                      (assoc "@type" [(-> class :common-props ::hydra/id)]))))
-              (tg/bind
-               (tg/return (-> class :supported-properties))
-               (fn [properties]
-                 (let [generators (->> properties
-                                       (mapv (fn [property]
-                                               (if (valid-for-mode? mode (:property-props property))
-                                                 (let [gen-prop (gen-for-property mode property api options)]
-                                                   (if (-> property :property-props ::hydra/required)
-                                                     gen-prop
-                                                     (tg/one-of [(tg/return nil) gen-prop])))
-                                                 (tg/return nil)))))]
-                   (apply tg/tuple generators)))))
-     options)))
+   (if (hydra/collection-model? class)
+     (make-collection-gen mode class api options)
+     (with-gen-id
+       (tg/fmap (fn [properties]
+                  (let [m (->> properties
+                               ;; remove properties not valid for the read mode, they
+                               ;; have been marked as nil
+                               (filter some?)
+                               ;; build the JSON-LD values
+                               (map (fn [[k v]]
+                                      (if (nil? v)
+                                        [k []]
+                                        (if (string? v)
+                                          [k [{"@id" v}]]
+                                          [k [v]]))))
+                               ;; collect the JSON-LD object
+                               (into {}))]
+                    (-> m
+                        (assoc "@id" "http://test.com/generated")
+                        (assoc "@type" [(-> class :common-props ::hydra/id)]))))
+                (tg/bind
+                 (tg/return (-> class :supported-properties))
+                 (fn [properties]
+                   (let [generators (->> properties
+                                         (mapv (fn [property]
+                                                 (if (valid-for-mode? mode (:property-props property))
+                                                   (let [gen-prop (gen-for-property mode property api options)]
+                                                     (if (-> property :property-props ::hydra/required)
+                                                       gen-prop
+                                                       (tg/one-of [(tg/return nil) gen-prop])))
+                                                   (tg/return nil)))))]
+                     (apply tg/tuple generators)))))
+       options))))
 
 (defn make-property-gen [type]
   (tg/fmap (fn [uri]

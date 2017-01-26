@@ -56,7 +56,8 @@
      (reset! *context*
              (->> context
                   (merge {"hydra" (lns/hydra)
-                          "rdfs" (lns/rdfs)})
+                          "rdfs" (lns/rdfs)
+                          "xsd" (lns/xsd)})
                   (merge prefixes)
                   (merge {"@vocab" vocab
                           "@base" base})
@@ -64,7 +65,8 @@
                   (into {})))))
   ([] (merge @*context*
              {"hydra" (lns/hydra)
-              "rdfs" (lns/rdfs)})))
+              "rdfs" (lns/rdfs)
+              "xsd" (lns/xsd)})))
 
 (s/def ::context boolean?)
 (s/fdef compact
@@ -432,3 +434,52 @@
     (-> data
         compact
         (get "http://test.com/p"))))
+
+(defn parse-triple-component [val]
+  (if (string/starts-with? val "\"")
+    (let [[value type] (string/split val #"\^\^")
+          value (string/replace value "\"" "")]
+      (if (and (some? type) (not= type ""))
+        {"@value" value "@type" type}
+        {"@value" value}))))
+
+(defn encode-uri [uri]
+  (let [{:keys [:protocol :username :password :host :port :path :query :anchor]} (url/url uri)
+        encoded-query (->> query
+                           (map (fn [[k v]] (str k "=" (url/url-encode v))))
+                           (string/join "&"))]
+    (str protocol "://" host
+         (if (and (some? port) (> port 0)) (str ":" port) "")
+         path
+         (if (some? query) (str "?" encoded-query) "")
+         (if (some? anchor) (str "#" anchor) ""))))
+
+(defn u ([x] (str "<" (encode-uri x) ">")))
+(defn l ([l] (str "\"" l "\"")))
+(defn d ( [l t] (str "\"" l "\"^^" t)))
+
+
+(defn ->trig [namespaces data]
+  (str "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
+@prefix dcterms: <http://purl.org/dc/terms/>.
+@prefix foaf: <http://xmlns.com/foaf/0.1/>.
+@prefix void: <http://rdfs.org/ns/void#>.\n"
+       (reduce (fn [acc [k v]]
+                 (if (and (not (string/starts-with? k "@"))
+                          (string? v)
+                          (not (string/starts-with? v "@")))
+                   (str acc "@prefix " k ": " (u v) ".\n")
+                   acc))
+               ""
+               namespaces)
+       "\n"
+       (->> data
+            (mapv (fn [[graph triples]]
+                    (str graph " {\n"
+                         (->> triples
+                              (filter some?)
+                              (mapv (fn [[s p o]]
+                                      (str "     " s " " p " " o ".\n")))
+                              (reduce str ""))
+                         "}\n")))
+            (reduce str))))

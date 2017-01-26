@@ -1,10 +1,12 @@
 (ns levanzo.indexing
   (:require [clojure.spec :as s]
+            [clojure.string :as string]
             [levanzo.hydra :as hydra]
             [levanzo.payload :as payload]
             [levanzo.routing :as routing]
             [levanzo.spec.jsonld :as jsonld-spec]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [cemerick.url :refer [url-encode] :as url]))
 
 ;; Structure required to index an API so we can satisfy BGP queries
 
@@ -170,7 +172,7 @@
                                       first))
       :else                   (do
                                 (log/debug (str "Group includes only resource handlers"))
-                                (->> (or resource property)
+                                (->> resource
                                      (filter #((:pattern %) pattern))
                                      first)))))
 
@@ -184,7 +186,7 @@
                                                      :request request})]
 
     {:results (if (some? results)
-                (let [triples (payload/->triples results)
+                (let [triples (flatten (map payload/->triples (flatten [results])))
                       filtered-triples (payload/filter-triples pattern triples)
                       selected-triples (->> filtered-triples
                                             (drop (* (dec page) per-page))
@@ -202,6 +204,7 @@
                                                      :object o
                                                      :pagination pagination
                                                      :request request})]
+    (log/debug "Got " (clojure.core/count results) " results")
     {:results (if (some? results)
                 (let [triples (->> results (map payload/->triples ) flatten)
                       filtered-triples (payload/filter-triples pattern triples)]
@@ -229,6 +232,8 @@
                          pagination
                          request]
   (log/debug (str "Found  " (count pattern-handlers) " to paginate"))
+  (log/debug "Pattern:")
+  (log/debug pattern)
   (let [grouped-handlers (group-handlers pattern-handlers)
         selected-handlers (->> grouped-handlers
                                (map #(select-handler % pattern))
@@ -238,7 +243,8 @@
     (if (empty? selected-handlers)
       {:results []
        :page nil
-       :group nil}
+       :group nil
+       :count nil}
       (loop [group group]
         (let [selected-handler (nth selected-handlers group)
               _ (log/debug (str "Selected handler kind " (:kind selected-handler)))
@@ -267,13 +273,16 @@
    model for the route matches the provided model, whether
    it is a class or a supported-property link"
   [uri model]
+  (log/debug "Checking if URI " uri " matches model " model)
   (let [match (routing/match-uri uri)]
+    (log/debug (some? match))
     (if (some? match)
       (let [matched-model (:model match)
             matched-model-uri (hydra/model-or-uri matched-model)]
         (cond
           (hydra/class-model? model) (= matched-model-uri (-> model :common-props ::hydra/id))
-          (hydra/supported-property? model) (= matched-model-uri (-> model :property :common-props ::hydra/id))
+          (hydra/supported-property? model) (or (= matched-model-uri (-> model :property :common-props ::hydra/id))
+                                                (= matched-model-uri (-> model :common-props ::hydra/id)))
           :else false))
       false)))
 
@@ -347,6 +356,7 @@
 (defn make-indexer [api api-index]
   (let [pattern-handlers (build-pattern-handlers api api-index)]
     (fn [{:keys [s p o] :as pattern} pagination request]
+      (log/debug "Checking index for pattern " pattern " and pagination " pagination)
       (let [compatible-handlers (cond
                                   ;; no inverse lookups allowed for now
                                   ;; (? ? o)
@@ -382,9 +392,81 @@
             pattern-handlers (->> compatible-handlers
                                   (filter (fn [pattern-handler]
                                             (payload/triple-match? (:pattern pattern-handler) pattern))))]
+        (log/debug "Found " (count compatible-handlers) " compatible handlers")
+        (log/debug "Found " (count pattern-handlers) " pattern compatible handlers")
         (if (empty? pattern-handlers)
           []
           (paginate-handlers pattern-handlers
                              pattern
                              pagination
                              request))))))
+
+(defn index-response [params-map {:keys [results page group per-page count] :as output} {:keys [server-port server-name uri query-string scheme] :as request}]
+  (let [base-uri  (reduce (fn [acc k]
+                            (if (some? (get params-map k))
+                              (str acc
+                                   (if (string/ends-with? acc "?") "" "&")
+                                   (name k) "=" (get params-map k))
+                              acc))
+                          (str (name scheme) "://" server-name (if (some? server-port) (str ":" server-port) "") uri "?")
+                          [:subject :predicate :object])
+        base-uri (if (string/ends-with? base-uri "?") (string/replace base-uri "?" "") base-uri)
+        this-uri (str (name scheme) "://" server-name (if (some? server-port) (str ":" server-port) "") uri (if (some? query-string) "?" "") query-string)
+        base (str (name scheme) "://" server-name (if (some? server-port) (str ":" server-port) ""))
+        metadata-uri (str this-uri "#metadata")
+        dataset-uri (str this-uri "#dataset")
+
+        response (payload/->trig
+                  ;; the context for the response data
+                  (payload/context)
+                  ;; the meta data of the ldf
+                  [[
+                    (u metadata-uri)
+                    [
+                     [(u (str metadata-uri)) "foaf:primaryTopic" (u (str this-uri))]
+                     [(u (str dataset-uri)) "hydra:member" (u (str dataset-uri))]
+                     [(u (str dataset-uri)) "a" "void:Dataset, hydra:Collection"]
+                     [(u (str dataset-uri)) "void:subset" (u (str base-uri))]
+                     [(u (str dataset-uri)) "void:uriLookupEndpoint" (l (str base (:uri request) "{?subject,predicate,object}"))]
+                     [(u (str dataset-uri)) "hydra:search" "_:triplePattern"]
+                     ["_:triplePattern" "hydra:template" (l (str base (:uri request) "{?subject,predicate,object}"))]
+                     ["_:triplePattern" "hydra:variableRepresentation" "hydra:ExplicitRepresentation"]
+                     ["_:triplePattern" "hydra:mapping" "_:subject"]
+                     ["_:triplePattern" "hydra:mapping" "_:predicate"]
+                     ["_:triplePattern" "hydra:mapping" "_:object"]
+                     ["_:subject" "hydra:variable" (l "subject")]
+                     ["_:subject" "hydra:property" "rdf:subject"]
+                     ["_:predicate" "hydra:variable" (l "predicate")]
+                     ["_:predicate" "hydra:property" "rdf:predicate"]
+                     ["_:object" "hydra:variable" (l "object")]
+                     ["_:object" "hydra:property" "rdf:object"]
+
+                     [(u this-uri) "void:subset" (u (str base-uri))]
+                     (if (some? results)
+                       [(u this-uri) "a" "hydra:PartialCollectionView"]
+                       [(u this-uri) "a" "hydra:Collection"])
+                     [(u this-uri) "dcterms:source" (u dataset-uri)]
+                     (if (and (some? results) (some? count))
+                       [(u this-uri) "hydra:totalItems" (d (or count 0) "xsd:integer")]
+                       [(u this-uri) "hydra:totalItems" (d 10000 "xsd:integer")])
+                     (if (and (some? results) (some? count))
+                       [(u this-uri) "void:triples" (d (or count 0) "xsd:integer")]
+                       [(u this-uri) "void:triples" (d 10000 "xsd:integer")])
+                     (if (some? results)
+                       [(u this-uri) "hydra:first" (u (str base-uri (if (string/index-of base-uri "?") "&" "?") "page=" 1 "&group=" 0 "&per-page=" (or per-page 50)))]
+                       nil)
+                     (if (some? page)
+                       [(u this-uri) "hydra:next" (u (str base-uri (if (string/index-of base-uri "?") "&" "?") "page=" (or page 1) "&group=" (or group 0) "&per-page=" (or per-page 50)))]
+                       nil)
+                     ]
+                    ]
+                   ;; the actual data in the fragment
+                   ["" (map (fn [{:keys [s p o]}]
+                              [(u (get s "@id")) (u (get p "@id")) (if (some? (get o "@id"))
+                                                                     (u (get o "@id"))
+                                                                     (if (some? (get o "@type"))
+                                                                       (d (get o "@value") (get o "@type"))
+                                                                       (l (get o "@value"))))])
+                            results)]
+                   ])]
+    {:body response :headers {"Content-Type" "application/trig;charset=utf-8"} :status 200}))

@@ -121,6 +121,7 @@
   [api property]
   (fn [mode api-validations jsonld]
     (let [range (-> property :rdf-props ::hydra/range)]
+      (log/debug "Range is " range " for property " (hydra/id property))
       (try
         (let [validation-result (check-range mode api-validations range jsonld)]
           (if (invalid? validation-result)
@@ -322,6 +323,32 @@
                nil
                (->ValidationError :invalid-payload errors (str "Errors (" (count errors) ") found during validation"))))))))
 
+(s/fdef parse-supported-collection
+        :args (s/cat :api ::hydra/ApiDocumentation
+                     :api-class ::hydra/Collection)
+        :ret ::predicate)
+(defn parse-supported-collection
+  "Creates a specification for a hydra supported class"
+  [api api-collection]
+  (let [member-class (-> api-collection :member-class)]
+    (if (nil? member-class)
+      (parse-supported-class api api-collection)
+      (let [api-class (hydra/find-model api member-class)]
+        (let [member-validation (parse-supported-class api api-class)
+              collection-class-validation (parse-supported-class api api-collection)]
+          (fn [mode api-validations jsonld]
+            (log/debug "Validating collection " (-> api-collection :common-props ::hydra/id) ", mode " mode)
+            (and (map? jsonld)
+                 (let [collection-errors (collection-class-validation mode api-validations jsonld)
+                       members (get jsonld (resolve "hydra:member") [])
+                       member-errors (->> members
+                                          (map (fn [member] (member-validation mode api-validations member)))
+                                          (filter some?))
+                       total-errors (filter some? (concat [collection-errors] member-errors))]
+                   (if (empty? total-errors)
+                     nil
+                     (->ValidationError :invalid-collection-payload total-errors (str "Errors (" (count total-errors) ") found during validation")))))))))))
+
 (s/fdef build-api-validations
         :args (s/cat :apiDocumentation ::hydra/ApiDocumentation)
         :ret ::ValidationsMap)
@@ -329,7 +356,10 @@
   (let [classes (:supported-classes api)]
     (reduce (fn [acc class]
               (let [uri (-> class :common-props ::hydra/id)
-                    validation (parse-supported-class api class)]
+                    is-collection (hydra/collection-model? class)
+                    validation (if is-collection
+                                 (parse-supported-collection api class)
+                                 (parse-supported-class api class))]
                 (assoc acc uri validation)))
             {}
             classes)))

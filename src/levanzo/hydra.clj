@@ -377,15 +377,15 @@
 (extend-protocol JSONLDSerialisable levanzo.hydra.SupportedProperty
                  (->jsonld [this]
                    (let [rdf-property (->jsonld (:property this))
-                         supported-property (->> {"@type" (resolve "hydra:SupportedProperty")
-                                                  (resolve "hydra:property") rdf-property}
-                                                 (set-if-some (-> this :property-props ::required) (resolve "hydra:required"))
-                                                 (set-if-some (-> this :property-props ::readonly) (resolve "hydra:readonly"))
-                                                 (set-if-some (-> this :property-props ::writeonly) (resolve "hydra:writeonly"))
-                                                 (generic->jsonld (:common-props this)))]
-                     (if-let [operations (:operations this)]
-                       (assoc supported-property (resolve "hydra:supportedOperation") (mapv ->jsonld operations))
-                       supported-property))))
+                         rdf-property (if-let [operations (:operations this)]
+                                        (assoc rdf-property (resolve "hydra:supportedOperation") (mapv ->jsonld operations))
+                                        rdf-property)]
+                     (->> {"@type" (resolve "hydra:SupportedProperty")
+                           (resolve "hydra:property") rdf-property}
+                          (set-if-some (-> this :property-props ::required) (resolve "hydra:required"))
+                          (set-if-some (-> this :property-props ::readonly) (resolve "hydra:readonly"))
+                          (set-if-some (-> this :property-props ::writeonly) (resolve "hydra:writeonly"))
+                          (generic->jsonld (:common-props this))))))
 
 ;; Map of options used to create a supported property
 (s/def ::supported-property-args (s/with-gen (s/keys :req [::property]
@@ -514,22 +514,22 @@
 ;; Is this collection paginated?
 (s/def ::is-paginated boolean?)
 ;; Class of the collection members
-(s/def ::member-class ::jsonld-spec/uri)
+(s/def ::member-class (s/nilable ::jsonld-spec/uri))
 
 (s/def ::Collection
   (s/keys :req-un [::jsonld-spec/uri
                    ::common-props
                    ::is-paginated
-                   ::member-class
-                   ::operations]))
+                   ::operations]
+          :opt-un [::member-class]))
 
 (s/def ::collection-args (s/keys :req [::id
-                                       ::is-paginated
-                                       ::member-class]
+                                       ::is-paginated]
                                  :un [::type
                                       ::title
                                       ::operations
-                                      ::description]))
+                                      ::description
+                                      ::member-class]))
 
 (defrecord Collection [uri
                        is-paginated
@@ -555,7 +555,6 @@
         :ret (s/and
               ::Collection
               #(= (:uri %) (resolve "hydra:Collection"))
-              #(not (nil? (-> % :member-class)))
               #(not (nil? (-> % :is-paginated))))
         :fn (s/and
              #(= (-> % :ret :operations count) (-> % :args :collection-args ::operations count))))
@@ -738,6 +737,9 @@
 
 (defn class-model? [model]
   (= (:uri model) (resolve "hydra:Class")))
+
+(defn collection-model? [model]
+  (= (:uri model) (resolve "hydra:Collection")))
 
 (defn supported-property? [model]
   (= (:uri model) (resolve "hydra:SupportedProperty")))

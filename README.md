@@ -18,11 +18,16 @@ The library is built on top of the following list of W3C standards and standard 
 - [Triple Pattern Fragments](https://www.hydra-cg.com/spec/latest/triple-pattern-fragments/) as the interface for API queries
 - [SPARQL](https://www.w3.org/TR/sparql11-overview/) as the query language over the API resources
 
-Levanzo uses Clojure Spec, you will need the development version of Clojure 1.9 to use the library.
-
 An example implementation of the Markus Lanthaler's Issues API using MongoDB as the backend [can be found in the examples](examples/issues).
 The API console for the demo is deployed [here](http://antoniogarrote.com:8080/).
 The Triple Pattern Fragments client for the demo can be found [here](http://antoniogarrote.com:3000/).
+
+Levanzo uses Clojure Spec, you will need the development version of Clojure 1.9 to use the library.
+The library can be found in Clojars:
+
+``` shell
+[levanzo "0.2.0"]
+```
 
 ## Walkthrough
 

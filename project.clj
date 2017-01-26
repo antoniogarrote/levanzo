@@ -6,6 +6,8 @@
   :monkeypatch-clojure-test false
   :source-paths ["src" "examples"]
   :signing {:gpg-key "antoniogarrote@gmail.com"}
+  :deploy-repositories [["releases" :clojars]
+                        ["snapshots" :clojars]]
   :dependencies [[org.clojure/clojure "1.9.0-alpha14"]
                  [bidi "2.0.16"]
                  [commons-validator "1.5.1"]

@@ -517,54 +517,61 @@ With this URI minting functionality we can code the handlers for our API resourc
 (def people-db (atom {}))
 (def addresses-db (atom {}))
 
-(defn get-people [args body request] (payload/instance
-                                      vocab-PeopleCollection
-                                      (payload/id {:model vocab-PeopleCollection
-                                                   :base base})
-                                      (payload/members (vals @people-db))))
+(defn get-people [args body request]
+  (payload/instance
+   vocab-PeopleCollection
+   (payload/id {:model vocab-PeopleCollection
+                :base base})
+   (payload/members (vals @people-db))))
 
-(defn post-person [args body request] (swap! people-db
-                                             #(let [id (inc (count %))
-                                                    new-person (-> body
-                                                                   ;; passwords are writeonly, we don't store them
-                                                                   (dissoc (hydra/id vocab-password))
-                                                                   (merge (payload/id
-                                                                           {:model sorg-Person
-                                                                            :args {:person-id id}
-                                                                            :base base}))
-                                                                   (merge (payload/supported-link
-                                                                           {:property sorg-address
-                                                                            :model person-address-link
-                                                                            :args {:person-id id}
-                                                                            :base base})))]
-                                                (assoc % (get new-person "@id") (payload/expand new-person)))))
+(defn post-person [args body request]
+  (swap! people-db
+         #(let [id (inc (count %))
+                new-person (-> body
+                               ;; passwords are writeonly, we don't store them
+                               (dissoc (hydra/id vocab-password))
+                               (merge (payload/id
+                                       {:model sorg-Person
+                                        :args {:person-id id}
+                                        :base base}))
+                               (merge (payload/supported-link
+                                       {:property sorg-address
+                                        :model person-address-link
+                                        :args {:person-id id}
+                                        :base base})))]
+            (assoc % (get new-person "@id") (payload/expand new-person)))))
 
-(defn get-person [args body request] (let [person (get @people-db
-                                                       (payload/link-for {:model sorg-Person
-                                                                          :args args
-                                                                          :base base}))]
-                                       (or person {:status 404 :body "Cannot find resource"})))
+(defn get-person [args body request]
+  (let [person (get @people-db
+                    (payload/link-for {:model sorg-Person
+                                       :args args
+                                       :base base}))]
+    (or person {:status 404 :body "Cannot find resource"})))
 
-(defn delete-person [args body request] (swap! people-db #(dissoc % (payload/link-for {:model sorg-Person
-                                                                                       :args args
-                                                                                       :base base}))))
+(defn delete-person [args body request]
+  (swap! people-db #(dissoc % (payload/link-for {:model sorg-Person
+                                                 :args args
+                                                 :base base}))))
 
-(defn get-address [args body request] (let [address (get @addresses-db
-                                                         (payload/link-for {:model person-address-link
-                                                                            :args args
-                                                                            :base base}))]
-                                        (or address {:status 404 :body "Cannot find resource"})))
+(defn get-address [args body request]
+  (let [address (get @addresses-db
+                     (payload/link-for {:model person-address-link
+                                        :args args
+                                        :base base}))]
+    (or address {:status 404 :body "Cannot find resource"})))
 
-(defn post-address [args body request] (swap! addresses-db
-                                              #(let [new-address-id (payload/link-for {:model person-address-link
-                                                                                       :args args
-                                                                                       :base base})
-                                                     new-address (assoc body "@id" new-address-id)]
-                                                 (assoc % new-address-id (payload/expand new-address)))))
+(defn post-address [args body request]
+  (swap! addresses-db
+         #(let [new-address-id (payload/link-for {:model person-address-link
+                                                  :args args
+                                                  :base base})
+                new-address (assoc body "@id" new-address-id)]
+            (assoc % new-address-id (payload/expand new-address)))))
 
-(defn delete-address [args body request] (swap! addresses-db #(dissoc % (payload/link-for {:model person-address-link
-                                                                                           :args args
-                                                                                           :base base}))))
+(defn delete-address [args body request]
+  (swap! addresses-db #(dissoc % (payload/link-for {:model person-address-link
+                                                    :args args
+                                                    :base base}))))
 ```
 
 Handlers are just functions accepting a map of arguments (including the parameters from URI templates in the routes), the optional body of the request, and the full ring Request object.

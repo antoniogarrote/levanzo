@@ -361,54 +361,61 @@
                           "http://schema.org/postalCode" [{"@value" "NW3 7PB"}],
                           "http://schema.org/streetAddress" [{"@value" "Finchley Road 523"}]}}))
 
-(defn get-people [args body request] (payload/instance
-                                      vocab-PeopleCollection
-                                      (payload/id {:model vocab-PeopleCollection
-                                                   :base base})
-                                      (payload/members (vals @people-db))))
+(defn get-people [args body request]
+  (payload/instance
+   vocab-PeopleCollection
+   (payload/id {:model vocab-PeopleCollection
+                :base base})
+   (payload/members (vals @people-db))))
 
-(defn post-person [args body request] (swap! people-db
-                                             #(let [id (inc (count %))
-                                                    new-person (-> body
-                                                                   ;; passwords are writeonly, we don't store them
-                                                                   (dissoc (hydra/id vocab-password))
-                                                                   (merge (payload/id
-                                                                           {:model sorg-Person
-                                                                            :args {:person-id id}
-                                                                            :base base}))
-                                                                   (merge (payload/supported-link
-                                                                           {:property sorg-address
-                                                                            :model person-address-link
-                                                                            :args {:person-id id}
-                                                                            :base base})))]
-                                                (assoc % (get new-person "@id") (payload/expand new-person)))))
+(defn post-person [args body request]
+  (swap! people-db
+         #(let [id (inc (count %))
+                new-person (-> body
+                               ;; passwords are writeonly, we don't store them
+                               (dissoc (hydra/id vocab-password))
+                               (merge (payload/id
+                                       {:model sorg-Person
+                                        :args {:person-id id}
+                                        :base base}))
+                               (merge (payload/supported-link
+                                       {:property sorg-address
+                                        :model person-address-link
+                                        :args {:person-id id}
+                                        :base base})))]
+            (assoc % (get new-person "@id") (payload/expand new-person)))))
 
-(defn get-person [args body request] (let [person (get @people-db
-                                                       (payload/link-for {:model sorg-Person
-                                                                          :args args
-                                                                          :base base}))]
-                                       (or person {:status 404 :body "Cannot find resource"})))
+(defn get-person [args body request]
+  (let [person (get @people-db
+                    (payload/link-for {:model sorg-Person
+                                       :args args
+                                       :base base}))]
+    (or person {:status 404 :body "Cannot find resource"})))
 
-(defn delete-person [args body request] (swap! people-db #(dissoc % (payload/link-for {:model sorg-Person
-                                                                                       :args args
-                                                                                       :base base}))))
+(defn delete-person [args body request]
+  (swap! people-db #(dissoc % (payload/link-for {:model sorg-Person
+                                                 :args args
+                                                 :base base}))))
 
-(defn get-address [args body request] (let [address (get @addresses-db
-                                                         (payload/link-for {:model person-address-link
-                                                                            :args args
-                                                                            :base base}))]
-                                        (or address {:status 404 :body "Cannot find resource"})))
+(defn get-address [args body request]
+  (let [address (get @addresses-db
+                     (payload/link-for {:model person-address-link
+                                        :args args
+                                        :base base}))]
+    (or address {:status 404 :body "Cannot find resource"})))
 
-(defn post-address [args body request] (swap! addresses-db
-                                              #(let [new-address-id (payload/link-for {:model person-address-link
-                                                                                       :args args
-                                                                                       :base base})
-                                                     new-address (assoc body "@id" new-address-id)]
-                                                 (assoc % new-address-id (payload/expand new-address)))))
+(defn post-address [args body request]
+  (swap! addresses-db
+         #(let [new-address-id (payload/link-for {:model person-address-link
+                                                  :args args
+                                                  :base base})
+                new-address (assoc body "@id" new-address-id)]
+            (assoc % new-address-id (payload/expand new-address)))))
 
-(defn delete-address [args body request] (swap! addresses-db #(dissoc % (payload/link-for {:model person-address-link
-                                                                                           :args args
-                                                                                           :base base}))))
+(defn delete-address [args body request]
+  (swap! addresses-db #(dissoc % (payload/link-for {:model person-address-link
+                                                    :args args
+                                                    :base base}))))
 
 (def api-routes {:path ["people"]
                  :model vocab-PeopleCollection
@@ -543,3 +550,23 @@
 
 ;;  to stop the server
 ;; (stop-api)
+
+(comment
+  ((index-property people-db) {:predicate (hydra/id sorg-name) :pagination {:page 1 :per-page 5}} )
+  ((index-property addresses-db) {:predicate (hydra/id sorg-name) :pagination {:page 1 :per-page 5}})
+
+  ((class-lookup addresses-db) {:subject (payload/link-for {:model person-address-link :args {:person-id 1} :base base})})
+
+  (person-address-link-join  {:subject (payload/link-for {:model sorg-Person
+                                                          :args {:person-id 1}
+                                                          :base base})
+                              :object nil})
+
+  (person-address-link-join  {:subject (payload/link-for {:model sorg-Person
+                                                          :args {:person-id 1}
+                                                          :base base})
+                              :object [(payload/link-for {:model person-address-link
+                                                          :args {:person-id 1}
+                                                          :base base})]
+                              :pagination {:page 1 :per-page 5}})
+  )

@@ -2,7 +2,7 @@
   (:require [clojure.spec :as s]
             [clojure.string :as string]
             [levanzo.hydra :as hydra]
-            [levanzo.payload :as payload]
+            [levanzo.payload :refer [u d l] :as payload]
             [levanzo.routing :as routing]
             [levanzo.spec.jsonld :as jsonld-spec]
             [taoensso.timbre :as log]
@@ -423,12 +423,12 @@
                   [[
                     (u metadata-uri)
                     [
-                     [(u (str metadata-uri)) "foaf:primaryTopic" (u (str this-uri))]
-                     [(u (str dataset-uri)) "hydra:member" (u (str dataset-uri))]
-                     [(u (str dataset-uri)) "a" "void:Dataset, hydra:Collection"]
-                     [(u (str dataset-uri)) "void:subset" (u (str base-uri))]
-                     [(u (str dataset-uri)) "void:uriLookupEndpoint" (l (str base (:uri request) "{?subject,predicate,object}"))]
-                     [(u (str dataset-uri)) "hydra:search" "_:triplePattern"]
+                     [(u metadata-uri) "foaf:primaryTopic" (u this-uri)]
+                     [(u dataset-uri) "hydra:member" (u dataset-uri)]
+                     [(u dataset-uri) "a" "void:Dataset, hydra:Collection"]
+                     [(u dataset-uri) "void:subset" (u base-uri)]
+                     [(u dataset-uri) "void:uriLookupEndpoint" (l (str base (:uri request) "{?subject,predicate,object}"))]
+                     [(u dataset-uri) "hydra:search" "_:triplePattern"]
                      ["_:triplePattern" "hydra:template" (l (str base (:uri request) "{?subject,predicate,object}"))]
                      ["_:triplePattern" "hydra:variableRepresentation" "hydra:ExplicitRepresentation"]
                      ["_:triplePattern" "hydra:mapping" "_:subject"]
@@ -441,7 +441,7 @@
                      ["_:object" "hydra:variable" (l "object")]
                      ["_:object" "hydra:property" "rdf:object"]
 
-                     [(u this-uri) "void:subset" (u (str base-uri))]
+                     [(u this-uri) "void:subset" (u base-uri)]
                      (if (some? results)
                        [(u this-uri) "a" "hydra:PartialCollectionView"]
                        [(u this-uri) "a" "hydra:Collection"])

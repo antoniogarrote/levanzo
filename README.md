@@ -1,15 +1,16 @@
 # levanzo [![CircleCI](https://circleci.com/gh/antoniogarrote/levanzo.svg?style=svg)](https://circleci.com/gh/antoniogarrote/levanzo)
 
 Levanzo is Clojure library to build hypermedia driven RESTful APIs using W3C standards.
+
 Levanzo supports the following features:
 
-- Declarative declaration of resource classes
+- Declarative definition of resource classes
 - Generation of machine consumable API documentation and meta-data
 - Declarative support for validation constraints
 - Generation of compatible HTTP middleware for the declared API and link generation functions
-- Support for API indices generation that can be used in cross-resource API queries
+- Support for API indices generation that can be used in queries over the API data graph
 
-The library is built on top of the following list of W3C standards:
+The library is built on top of the following list of W3C standards and standard proposals:
 
 - [JSON-LD](http://json-ld.org/spec/latest/json-ld/) as the preferred data format
 - [Hydra](http://www.hydra-cg.com/spec/latest/core/) as the API vocabulary
@@ -17,7 +18,12 @@ The library is built on top of the following list of W3C standards:
 - [Triple Pattern Fragments](https://www.hydra-cg.com/spec/latest/triple-pattern-fragments/) as the interface for API queries
 - [SPARQL](https://www.w3.org/TR/sparql11-overview/) as the query language over the API resources
 
-## Tutorial
+Levanzo uses Clojure Spec, you will need the development version of Clojure 1.9 to use the library.
+
+## Walkthrough
+
+This section describes the features of Levanzo and the technologies it is based through the development of a small toy API.
+The full source code of the example can be found in [`examples/people.clj`](examples/people.clj).
 
 ### 1. Setting up your API namespace
 
@@ -652,41 +658,90 @@ The following code snippet shows a toy implementation of the indexing functions 
                    (->> (deref collection)
                         vals
                         (filter #(-> % (get predicate) first some?))))]
-      (paginate-values values pagination))))
+      {:results (paginate-values values pagination)
+       :count (count values)})))
 
 (defn person-address-link-join [{:keys [subject object pagination]}]
   (let [subject (->> @people-db
                      vals
                      (filter #(= (get % "@id") subject))
                      first)]
-    (if (and (some? subject)
-             (= (:page pagination) 1))
-      (let [joined-address (-> subject (get (hydra/id sorg-address)) first (get "@id"))
-            address (->> @addresses-db
-                         vals
-                         (filter #(= (get % "@id") joined-address))
-                         first)
-            object-set (set object)]
-        (if (some? object)
-          (if (object-set (get address "@id"))
-            [address]
-            [])
-          [address]))
-      [])))
+    {:results (if (and (some? subject)
+                       (= (:page pagination) 1))
+                (let [joined-address (-> subject (get (hydra/id sorg-address)) first (get "@id"))
+                      address (->> @addresses-db
+                                   vals
+                                   (filter #(= (get % "@id") joined-address))
+                                   first)
+                      object-set (set object)]
+                  (if (some? object)
+                    (if (object-set (get address "@id"))
+                      [address]
+                      [])
+                    [address]))
+                [])
+     :count 1}))
 
-(def indices {sorg-Person
-
-              {:resource (fn [{:keys [subject]}] (get @people-db subject))
-               :property {sorg-name  (index-property people-db)
-                          sorg-email (index-property people-db)}
-               :join {person-address-link person-address-link-join}}
-
-              sorg-PostalAddress
-
-              {:resource (fn [{:keys [subject]}] (get @addresses-db subject))
-               :property {sorg-address (index-property addresses-db)
-                          sorg-postal-code (index-property addresses-db)}}})
+(defn class-lookup [collection]
+  (fn [{:keys [subject]}] (if-let [result (get (deref collection) subject)]
+                           {:results [result] :count 1}
+                           {:results [] :count 1})))
 ```
+
+Indexing functions receive pagination information and a map with value for subject, object and predicate values as plain strings or JSON-LD style values in the case of the object component.
+They need to return a map with paginated results and a count of the total matches. The count can be an estimation.
+
+Now we can associate the index functions to components in the API model using the `levanzo.indexing/api-index` function:
+
+``` clojure
+(require '[levanzo.indexing :as indexing])
+
+(def indices (indexing/api-index
+              {sorg-Person
+               {:resource (class-lookup people-db)
+                :properties {sorg-name  {:index (index-property people-db)}
+                             sorg-email {:index (index-property people-db)}}
+                :join {person-address-link person-address-link-join}}
+
+               sorg-PostalAddress
+               {:properties {sorg-address {:index (index-property addresses-db)}
+                             sorg-postal-code {:index (index-property addresses-db)}}}
+
+               person-address-link
+               {:resource (class-lookup addresses-db)}}))
+```
+
+Finally, to expose the interface, we need to pass the index to the `levanzo.http/middleware` function when we are creating the handler for the API. We also need to specify a path where the Triple Pattern Fragments endpoint will be located:
+
+``` clojure
+(def api-handler (http/middleware {:api API
+                                   :index indices
+                                   :routes api-routes
+                                   :mount-path "/"
+                                   :documentation-path "/vocab"
+                                   :fragments-path "/index"}))
+
+(defn cors-enabled [middleware]
+  (fn [request]
+    (let [response (middleware request)
+          headers (:headers response)
+          headers (assoc headers "Access-Control-Allow-Origin" "*")
+          response (assoc response :headers headers)]
+      response)))
+
+(def stop-api (http-kit/run-server (cors-enabled api-handler) {:port 8080}))
+```
+
+With this configuration, the TPF endpoint will be located at `/index`. We can now query the interface to obtain triples matching a pattern.
+For example, to query the pattern [s:<http://localhost:8080/people/1/address>, p:?, o:?] we can run the following HTTP request:
+
+``` shell
+$ curl -iv http://localhost:8080/index?subject=http%3A%2F%2Flocalhost%3A8080%2Fpeople%2F1%2Faddress
+```
+The response will contain the relevant triples and some meta-data with hypermedia controls for a HTTP client to retrieve other fragments from the API.
+A TPF client like [Ruben Verborgh TPF web client](http://client.linkeddatafragments.org/) can use this interface to execute complex [SPARQL](https://www.w3.org/TR/sparql11-query/) queries over the full data graph of our API:
+
+![console1](doc/images/ldfconsole.png)
 
 ## License
 

@@ -20,6 +20,8 @@ The library is built on top of the following list of W3C standards and standard 
 
 Levanzo uses Clojure Spec, you will need the development version of Clojure 1.9 to use the library.
 
+An example implementation of the Markus Lanthaler's Issues API using MongoDB as the backend [can be found in the examples](examples/issues). The API console is deployed [here](http://antoniogarrote.com:8080/). The Triple Pattern Fragments client can be found [here](http://antoniogarrote.com:3000/).
+
 ## Walkthrough
 
 This section describes the features of Levanzo and the technologies it is based through the development of a small toy API.

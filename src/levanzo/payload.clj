@@ -57,7 +57,8 @@
              (->> context
                   (merge {"hydra" (lns/hydra)
                           "rdfs" (lns/rdfs)
-                          "xsd" (lns/xsd)})
+                          "xsd" (lns/xsd)
+                          "sh" (lns/sh)})
                   (merge prefixes)
                   (merge {"@vocab" vocab
                           "@base" base})
@@ -66,7 +67,8 @@
   ([] (merge @*context*
              {"hydra" (lns/hydra)
               "rdfs" (lns/rdfs)
-              "xsd" (lns/xsd)})))
+              "xsd" (lns/xsd)
+              "sh" (lns/sh)})))
 
 (s/def ::context boolean?)
 (s/fdef compact

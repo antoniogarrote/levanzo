@@ -20,6 +20,7 @@
 (define-rdf-ns rdfs "http://www.w3.org/2000/01/rdf-schema#")
 (define-rdf-ns hydra "http://www.w3.org/ns/hydra/core#")
 (define-rdf-ns xsd "http://www.w3.org/2001/XMLSchema#")
+(define-rdf-ns sh "http://www.w3.org/ns/shacl#")
 
 (defn resolve [curie]
   (let [[p s] (string/split curie #"\:")]

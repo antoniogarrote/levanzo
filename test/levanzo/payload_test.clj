@@ -8,15 +8,16 @@
 (deftest context-test
   (spec-utils/check-symbol `payload/context)
   (with-bindings {#'lns/*ns-register* (atom {"hydra" "http://www.w3.org/ns/hydra/core#"})}
-    (is (= {"hydra" "http://www.w3.org/ns/hydra/core#", "rdfs" "http://www.w3.org/2000/01/rdf-schema#" "xsd" "http://www.w3.org/2001/XMLSchema#"}
+    (is (= {"hydra" "http://www.w3.org/ns/hydra/core#", "rdfs" "http://www.w3.org/2000/01/rdf-schema#" "xsd" "http://www.w3.org/2001/XMLSchema#" "sh" "http://www.w3.org/ns/shacl#"}
            (payload/context {})))
-    (is (= {"hydra" "http://www.w3.org/ns/hydra/core#", "rdfs" "http://www.w3.org/2000/01/rdf-schema#" "xsd" "http://www.w3.org/2001/XMLSchema#"}
+    (is (= {"hydra" "http://www.w3.org/ns/hydra/core#", "rdfs" "http://www.w3.org/2000/01/rdf-schema#" "xsd" "http://www.w3.org/2001/XMLSchema#"  "sh" "http://www.w3.org/ns/shacl#"}
            (payload/context {:ns []})))
     (is (= {"@base" "http://test.com/base"
             "@vocab" "http://test.com/base#vocab"
             "rdfs" "http://www.w3.org/2000/01/rdf-schema#"
             "hydra" "http://www.w3.org/ns/hydra/core#"
-            "xsd" "http://www.w3.org/2001/XMLSchema#"}
+            "xsd" "http://www.w3.org/2001/XMLSchema#"
+            "sh" "http://www.w3.org/ns/shacl#"}
            (payload/context {:base "http://test.com/base"
                              :vocab "http://test.com/base#vocab"
                              :ns [:hydra]})))))
@@ -28,7 +29,8 @@
                       "@vocab" "http://test.com/vocab#"
                       "hydra" "http://www.w3.org/ns/hydra/core#",
                       "rdfs" "http://www.w3.org/2000/01/rdf-schema#"
-                      "xsd" "http://www.w3.org/2001/XMLSchema#"}}
+                      "xsd" "http://www.w3.org/2001/XMLSchema#"
+                      "sh" "http://www.w3.org/ns/shacl#"}}
        (with-bindings {#'payload/*context* (atom {"@base" "http://test.com/"
                                                   "@vocab" "http://test.com/vocab#"})}
          (payload/compact {"http://test.com/vocab#test" {"@id" "http://test.com/test/1"}}))))

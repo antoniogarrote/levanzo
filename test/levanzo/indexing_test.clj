@@ -350,9 +350,6 @@
                                 :per-page 5
                                 :group 0}
                                {})]
-        (println "\n\n")
-        (prn response)
-        (prn response2)
         (is (= 2 (count (:results response))))
         ;;(is (= 1 (count (:results response2))))
         )))

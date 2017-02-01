@@ -107,9 +107,12 @@
                                                                                                                          ::hydra/range "http://www.w3.org/2001/XMLSchema#string"})
                                                                                        ::hydra/required true})
                                                             (hydra/supported-property {::hydra/property (hydra/property  {::hydra/id "http://xmlns.com/foaf/0.1/age"
-                                                                                                                          ::hydra/range "http://www.w3.org/2001/XMLSchema#decimal"})})]}))
+                                                                                                                          ::hydra/range "http://www.w3.org/2001/XMLSchema#decimal"})
+                                                                                       ::hydra/min-count 1
+                                                                                       ::hydra/max-count 5})]}))
 (deftest class-jsonld-tests
-  (is (= {"@type" "http://www.w3.org/ns/hydra/core#Class",
+  (is (= {"@type" ["http://www.w3.org/ns/hydra/core#Class"
+                   "http://www.w3.org/ns/shacl#Shape"],
           "http://www.w3.org/ns/hydra/core#supportedProperty"
           [{"@type" "http://www.w3.org/ns/hydra/core#SupportedProperty",
             "http://www.w3.org/ns/hydra/core#property"
@@ -131,6 +134,10 @@
             "http://www.w3.org/ns/hydra/core#method" "DELETE",
             "http://www.w3.org/ns/hydra/core#title"
             "Destroys a MyClass instance"}],
+          "http://www.w3.org/ns/shacl#property"
+          [{"http://www.w3.org/ns/shacl#predicate" "http://xmlns.com/foaf/0.1/age",
+            "http://www.w3.org/ns/shacl#minCount" 1,
+            "http://www.w3.org/ns/shacl#maxCount" 5}]
           "@id" "http://test.com#MyClass",
           "http://www.w3.org/ns/hydra/core#title" "MyClass",
           "http://www.w3.org/ns/hydra/core#description" "Test class"}

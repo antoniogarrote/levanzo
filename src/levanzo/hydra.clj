@@ -11,7 +11,8 @@
 (defprotocol JSONLDSerialisable
   "Protocol that must be implemented by implemented by elements of the model that can
    be serialised as JSON-LD documents"
-  (->jsonld [this]))
+  (->jsonld [this])
+  (->shacl [this]))
 
 ;; Common JSON-LD options
 
@@ -94,7 +95,8 @@
                      (->> jsonld
                           (link-if-some (-> this :operation-props ::expects) (resolve "hydra:expects"))
                           (link-if-some (-> this :operation-props ::returns) (resolve "hydra:returns"))
-                          (generic->jsonld (:common-props this))))))
+                          (generic->jsonld (:common-props this)))))
+                 (->shacl [this]))
 
 (s/fdef operation
         :args (s/cat :operations-args ::operation-args)
@@ -197,6 +199,12 @@
 ;; Is this supported property a template?
 (s/def ::is-template boolean?)
 
+;; SHACL validations
+
+;; SHACL sh:minCount
+(s/def ::min-count integer?)
+;; SHACL sh:maxCount
+(s/def ::max-count integer?)
 
 (s/def ::rdf-props (s/keys :opt [::domain ::range]))
 
@@ -217,7 +225,8 @@
                           (set-if-some (-> this :common-props ::title) (resolve "rdfs:label"))
                           (set-if-some (-> this :common-props ::description) (resolve "rdfs:comment"))
                           (link-if-some (-> this :rdf-props ::domain) (resolve "rdfs:domain"))
-                          (link-if-some (-> this :rdf-props ::range) (resolve "rdfs:range"))))))
+                          (link-if-some (-> this :rdf-props ::range) (resolve "rdfs:range")))))
+                 (->shacl [this]))
 
 (s/def ::Property (s/with-gen
                     (s/and (s/keys :req-un [::jsonld-spec/uri
@@ -332,12 +341,43 @@
               (clean-nils {::domain domain
                            ::range range})))
 
-
 ;; Hydra/RDF properties options, hydra:required, hydra:writeonly, hydra:readonly
 ;; id type title and description
-(s/def ::property-props (s/and (s/keys :opt [::required ::writeonly ::readonly])
-                               ;; properties cannot be at the same time readonly and writeonly
-                               #(not (and (::writeonly %) (::readonly %)))))
+(s/def ::property-props (s/with-gen (s/and (s/keys :opt [::required ::writeonly ::readonly ::min-count ::max-count])
+                                           ;; properties cannot be at the same time readonly and writeonly
+                                           #(not (and (::writeonly %) (::readonly %)))
+                                           ;; if its required it has to have a > 1 min cardinality
+                                           ;; if its optional it has to have a = 0 min cardinality
+                                           #(cond
+                                              (true? (::required %)) (or (nil? (::min-count %))
+                                                                         (and (some? (::min-count %)) (> (::min-count %) 0)))
+                                              (false? (::required %)) (or (nil? (::min-count %))
+                                                                          (not (and (some? (::min-count %)) (> (::min-count %) 0))))
+                                              :else true)
+                                           ;; non negative cardinalities
+                                           #(not (and (some? (::min-count %)) (< (::min-count %) 0)))
+                                           #(not (and (some? (::max-count %)) (< (::max-count %) 0)))
+                                           ;; compatibles min, max cardinalities
+                                           #(if (and (some? (::min-count %))
+                                                     (some? (::max-count %)))
+                                              (<= (::min-count %) (::max-count %))
+                                              true))
+                          #(tg/fmap (fn [[req wo ro min-c max-c]]
+                                      (let [min-c (if req (inc (or min-c 0)) min-c)
+                                            max-c (if (and req (some? max-c))
+                                                    (if (> max-c min-c) max-c (inc min-c))
+                                                    max-c)]
+                                        {::required req
+                                         ::writeonly wo
+                                         ::readonly ro
+                                         ::min-count min-c
+                                         ::max-count max-c}))
+                                    (tg/tuple
+                                     (s/gen (s/nilable ::required))
+                                     (s/gen (s/nilable ::writeonly))
+                                     (s/gen (s/nilable ::readonly))
+                                     (s/gen (s/nilable ::min-count))
+                                     (s/gen (s/nilable ::max-count))))))
 ;; RDF property
 (s/def ::property ::Property)
 ;; List of operations associated to a link/template
@@ -373,6 +413,15 @@
                (s/gen ::property-props)
                (s/gen (s/coll-of ::Operation :max-count 1 :min-count 1))))))
 
+(defn get-shacl [this]
+  (let [rdf-property-id (-> this :property :common-props ::id)
+        sh-property (->> {(resolve "sh:predicate") rdf-property-id}
+                         (set-if-some (-> this :property-props ::min-count) (resolve "sh:minCount"))
+                         (set-if-some (-> this :property-props ::max-count) (resolve "sh:maxCount")))]
+    (if (> (count sh-property) 1)
+      sh-property
+      nil)))
+
 ;; Operations can be serialised as JSON-LD objects
 (extend-protocol JSONLDSerialisable levanzo.hydra.SupportedProperty
                  (->jsonld [this]
@@ -385,7 +434,9 @@
                           (set-if-some (-> this :property-props ::required) (resolve "hydra:required"))
                           (set-if-some (-> this :property-props ::readonly) (resolve "hydra:readonly"))
                           (set-if-some (-> this :property-props ::writeonly) (resolve "hydra:writeonly"))
-                          (generic->jsonld (:common-props this))))))
+                          (generic->jsonld (:common-props this)))))
+                 (->shacl [this]
+                   (get-shacl this)))
 
 ;; Map of options used to create a supported property
 (s/def ::supported-property-args (s/with-gen (s/keys :req [::property]
@@ -436,7 +487,9 @@
            :levanzo.hydra/description
            :levanzo.hydra/required
            :levanzo.hydra/readonly
-           :levanzo.hydra/writeonly]}]
+           :levanzo.hydra/writeonly
+           :levanzo.hydra/min-count
+           :levanzo.hydra/max-count]}]
   (->SupportedProperty (resolve "hydra:SupportedProperty")
                        property
                        (clean-nils {::id id
@@ -445,7 +498,9 @@
                                     ::description description})
                        (clean-nils {::required required
                                     ::readonly readonly
-                                    ::writeonly writeonly})
+                                    ::writeonly writeonly
+                                    ::min-count min-count
+                                    ::max-count max-count})
                        (or operations [])))
 
 
@@ -476,12 +531,20 @@
 ;; Classes can be serialised as JSON-LD objects
 (extend-protocol JSONLDSerialisable levanzo.hydra.SupportedClass
                  (->jsonld [this]
-                   (let [jsonld {"@type" (resolve "hydra:Class")
+                   (let [sh-properties (->> (-> this :supported-properties)
+                                            (map ->shacl)
+                                            (filter some?))
+                         jsonld {"@type" [(resolve "hydra:Class") (resolve "sh:Shape")]
                                  (resolve "hydra:supportedProperty") (mapv ->jsonld (-> this :supported-properties))
-                                 (resolve "hydra:supportedOperation") (mapv ->jsonld (-> this :operations))}]
+                                 (resolve "hydra:supportedOperation") (mapv ->jsonld (-> this :operations))}
+                         jsonld (if (not (empty? sh-properties))
+                                  (-> jsonld
+                                      (assoc (resolve "sh:property") sh-properties))
+                                  jsonld)]
                      (->> jsonld
                           clean-nils
-                          (generic->jsonld (:common-props this))))))
+                          (generic->jsonld (:common-props this)))))
+                 (->shacl [this] nil))
 
 (s/fdef class
         :args (s/cat :class-args ::class-args)
@@ -548,7 +611,8 @@
                                  "@type" type}]
                      (->> jsonld
                           clean-nils
-                          (generic->jsonld (:common-props this))))))
+                          (generic->jsonld (:common-props this)))))
+                 (->shacl [this] nil))
 
 (s/fdef collection
         :args (s/cat :collection-args ::collection-args)
@@ -651,7 +715,8 @@
                                  "lvz:entrypointClass" (-> this :api-props ::entrypoint-class)
                                  (resolve "hydra:supportedClass") (mapv ->jsonld (-> this :supported-classes))}]
                      (->> jsonld
-                          (generic->jsonld (:common-props this))))))
+                          (generic->jsonld (:common-props this)))))
+                 (->shacl [this] nil))
 
 (s/fdef api
         :args (s/cat :api-args ::api-args)

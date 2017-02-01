@@ -153,6 +153,42 @@
                                    "Readonly and writeonly properties cannot be access in update mode"))
       (throw (Exception. (str "Unknown access mode " mode))))))
 
+(s/fdef check-cardinality
+        :args (s/cat :jsolnd ::jsonld-spec/expanded-jsonld
+                     :supported-property ::hydra/SupportedProperty)
+        :ret boolean?)
+(defn check-cardinality
+  "Checks if the value is within the allowed cardinality according to SHACL constraints"
+  [jsonld supported-property]
+  (let [property-id (-> supported-property :property :common-props ::hydra/id)
+        min-count (-> supported-property :property-props ::hydra/min-count)
+        max-count (-> supported-property :property-props ::hydra/max-count)
+        cardinality (count (get jsonld property-id []))]
+    (let [result (cond
+                   (and (some? min-count)
+                        (some? max-count))   (and (<= cardinality max-count)
+                                                  (>= cardinality min-count))
+                   (some? min-count)         (>= cardinality min-count)
+                   (some? max-count)         (<= cardinality max-count)
+                   :else                     true)]
+      (log/debug "Validating cardinality for  " property-id " min-count " min-count " max-count " max-count " cardinality " cardinality)
+      (if (false? result)
+        false
+        true))))
+
+(s/fdef with-shacl-constraints
+        :args (s/cat :supported-property ::hydra/SupportedProperty
+                     :predicate ::predicate)
+        :ret ::predicate)
+(defn with-shacl-constraints
+  "Wraps a validation to provide access mode validation"
+  [supported-property predicate]
+  (fn [mode api-validations jsonld]
+    (if (check-cardinality jsonld supported-property)
+      (predicate mode api-validations jsonld)
+      (->ValidationError :cardinality-error {:property supported-property}
+                         (str "Cardinality error for property " (-> supported-property :common-props ::hydra/id))))))
+
 (s/fdef compatible-mode?
         :args (s/cat :mode ::mode
                      :supported-property ::hydra/supported-propert)
@@ -213,27 +249,28 @@
   (let [link (:property supported-property)
         property-validator (parse-link api link)]
     (with-access-mode-validation supported-property
+      (with-shacl-constraints supported-property
       (fn [mode api-validations jsonld]
-        (let [link-id (-> link :common-props ::hydra/id)
-              is-optional (not (-> supported-property :property-props ::hydra/required))
-              values (get jsonld link-id [])
-              value (first values)]
-          (cond
-            (= 0 (count values)) (if is-optional
-                                   nil
-                                   (->ValidationError :link-property-error
+          (let [link-id (-> link :common-props ::hydra/id)
+                is-optional (not (-> supported-property :property-props ::hydra/required))
+                values (get jsonld link-id [])
+                value (first values)]
+            (cond
+              (= 0 (count values)) (if is-optional
+                                     nil
+                                     (->ValidationError :link-property-error
+                                                        supported-property
+                                                        (str "Missing mandatory property " link-id)))
+              (> 1 (count values)) (->ValidationError :link-property-error
                                                       supported-property
-                                                      (str "Missing mandatory property " link-id)))
-            (> 1 (count values)) (->ValidationError :link-property-error
-                                                    supported-property
-                                                    (str "Cardinality error, more than one link value for property " link-id))
-            :else                   (let [validation-result (property-validator mode api-validations value)]
-                                      (if (nil? validation-result)
-                                        validation-result
-                                        (->ValidationError :link-property-error
-                                                           {:supported-property supported-property
-                                                            :nested-validation-error validation-result}
-                                                           (str "Erroneous link for supported property link" link-id))))))))))
+                                                      (str "Cardinality error, more than one link value for property " link-id))
+              :else                   (let [validation-result (property-validator mode api-validations value)]
+                                        (if (nil? validation-result)
+                                          validation-result
+                                          (->ValidationError :link-property-error
+                                                             {:supported-property supported-property
+                                                              :nested-validation-error validation-result}
+                                                             (str "Erroneous link for supported property link" link-id)))))))))))
 
 (s/fdef parse-plain-property
         :args (s/cat :api ::hydra/ApiDocumentation
@@ -270,27 +307,28 @@
     (log/debug "Validating property " property)
     (log/debug "Validating property " (-> property :common-props ::hydra/id))
     (with-access-mode-validation supported-property
-      (fn [mode api-validations jsonld]
-        (log/debug "Validating plain property " (-> property :common-props ::hydra/id))
-        (let [property-id (-> property :common-props ::hydra/id)
-              is-optional (not (-> supported-property :property-props ::hydra/required))
-              values (get jsonld property-id)
-              value (first values)]
-          (log/debug {:is-optional is-optional
-                      :values (count values)
-                      :value value})
-          (cond
-            (= 0 (count values))  (if is-optional
-                                    nil
-                                    (->ValidationError :property-error supported-property (str "Missing mandatory property " property)))
-            (> 1 (count values))  (->ValidationError :property-error supported-property (str "Cardinality error, more than one link value for property " property))
-            :else                   (let [validation-result (property-validator mode api-validations value)]
-                                      (if (nil? validation-result)
-                                        validation-result
-                                        (->ValidationError :property-error
-                                                           {:supported-property supported-property
-                                                            :nested-validation-error validation-result}
-                                                           (str "Erroneous value for supported property" property-id))))))))))
+      (with-shacl-constraints supported-property
+        (fn [mode api-validations jsonld]
+          (log/debug "Validating plain property " (-> property :common-props ::hydra/id))
+          (let [property-id (-> property :common-props ::hydra/id)
+                is-optional (not (-> supported-property :property-props ::hydra/required))
+                values (get jsonld property-id)
+                value (first values)]
+            (log/debug {:is-optional is-optional
+                        :values (count values)
+                        :value value})
+            (cond
+              (= 0 (count values))  (if is-optional
+                                      nil
+                                      (->ValidationError :property-error supported-property (str "Missing mandatory property " property)))
+              (> 1 (count values))  (->ValidationError :property-error supported-property (str "Cardinality error, more than one link value for property " property))
+              :else                   (let [validation-result (property-validator mode api-validations value)]
+                                        (if (nil? validation-result)
+                                          validation-result
+                                          (->ValidationError :property-error
+                                                             {:supported-property supported-property
+                                                              :nested-validation-error validation-result}
+                                                             (str "Erroneous value for supported property" property-id)))))))))))
 
 
 (s/fdef parse-supported-property

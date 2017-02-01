@@ -55,8 +55,8 @@
                                                                      :previous (if (> page 1) (dec page) nil)}))
                               (payload/compact)))))
 
-(defn trace [x] (prn x) x)
-(def get-user (fn [args body request] (trace (dissoc (db/find-one "users" (payload/link-for {:model api/User :args args})) "password"))))
+
+(def get-user (fn [args body request] (dissoc (db/find-one "users" (payload/link-for {:model api/User :args args})) "password")))
 
 (def put-user (fn [args body request]
                 (->> (payload/link-for {:model api/User :args args})

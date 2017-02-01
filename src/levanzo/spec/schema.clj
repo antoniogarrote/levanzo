@@ -3,6 +3,7 @@
             [levanzo.namespaces :refer [xsd resolve]]
             [levanzo.hydra :as hydra]
             [levanzo.spec.jsonld :as jsonld-spec]
+            [levanzo.utils :as utils]
             [clojure.spec :as s]
             [clojure.spec.gen :as gen]
             [clojure.spec.test :as stest]
@@ -37,6 +38,17 @@
       :write (not readonly)
       :update (and (not writeonly) (not readonly)))))
 
+(defn valid-for-cardinality? [value property-props]
+  (let [min-count (or (-> property-props ::hydra/min-count) nil)
+        max-count(or (-> property-props ::hydra/max-count) nil)
+        valid-min (if (some? min-count)
+                    (>= (count value) min-count)
+                    true)
+        valid-max (if (some? max-count)
+                    (<= (count value) max-count)
+                    true)]
+    (and valid-max valid-min)))
+
 (defn optional-gen [g]
   (tg/one-of [g
               (tg/return nil)]))
@@ -47,20 +59,26 @@
   ([mode property api] (gen-for-property mode property api {}))
   ([mode {:keys [property-props property]} api options]
    (let [property-id (-> property :common-props ::hydra/id)
+         min-count (-> property-props ::hydra/min-count)
+         max-count (-> property-props ::hydra/max-count)
          is-link (-> property :is-link)
-         range (-> property :rdf-props ::hydra/range)]
+         range (-> property :rdf-props ::hydra/range)
+         required (::hydra/required property-props)]
      (tg/tuple
       (tg/return property-id)
-      (if is-link
-        (cond
-          (some? (get options property-id)) (get options property-id)
-          :else (s/gen ::jsonld-spec/uri))
-        (cond (some? (get options property-id)) (get options property-id)
-              (schema/xsd-uri? range)           (make-xsd-type-gen range)
-              :else (let [class (hydra/find-class api range)]
-                      ;; Careful! this will explode with cyclic APIs
-                      (do
-                        (make-payload-gen mode class api)))))))))
+      (tg/vector
+       (if is-link
+         (cond
+           (some? (get options property-id)) (get options property-id)
+           :else (s/gen ::jsonld-spec/uri))
+         (cond (some? (get options property-id)) (get options property-id)
+               (schema/xsd-uri? range)           (make-xsd-type-gen range)
+               :else (let [class (hydra/find-class api range)]
+                       ;; Careful! this will explode with cyclic APIs
+                       (do
+                         (make-payload-gen mode class api)))))
+       (or min-count 1)
+       (or max-count 1))))))
 
 (defn with-gen-id [g options]
   (tg/bind g
@@ -96,12 +114,11 @@
                                ;; have been marked as nil
                                (filter some?)
                                ;; build the JSON-LD values
-                               (map (fn [[k v]]
-                                      (if (nil? v)
-                                        [k []]
-                                        (if (string? v)
-                                          [k [{"@id" v}]]
-                                          [k [v]]))))
+                               (mapv (fn [[k vs]]
+                                       [k (->> vs
+                                               (filter some?)
+                                               (mapv (fn [v]
+                                                       (if (string? v) {"@id" v} v))))]))
                                ;; collect the JSON-LD object
                                (into {}))]
                     (-> m
@@ -131,21 +148,47 @@
   (tg/fmap (fn [supported-property]
              (let [property (:property supported-property)
                    property (-> property
-                                (assoc-in [:rdf-props ::hydra/range] type))]
+                                (assoc-in [:rdf-props ::hydra/range] type))
+                   min-count (get-in supported-property [::property-props ::hydra/min-count])
+                   max-count (get-in supported-property [::property-props ::hydra/max-count])
+                   min-count (if required
+                               (if (> (or min-count 0) 1) min-count 1)
+                               0)
+                   max-count (if required
+                               (if (> (or max-count 0) min-count) max-count min-count)
+                               max-count)
+                   property-props (-> (get supported-property :property-props)
+                                      (assoc ::hydra/required required)
+                                      (assoc ::hydra/max-count max-count)
+                                      (assoc ::hydra/min-count min-count)
+                                      utils/clean-nils)]
                (-> supported-property
                    (assoc :property property)
-                   (assoc-in [:property-props ::hydra/required] required))))
+                   (assoc :property-props property-props))))
            (s/gen (s/and ::hydra/SupportedProperty
                          #(= (resolve "rdf:Property") (-> % :property :uri))))))
 
 (defn make-link-property-gen [target required]
-  (tg/fmap (fn [[property operation]]
+  (tg/fmap (fn [[supported-property operation]]
              (let [operation (-> operation
                                  (assoc-in [:operation-props ::hydra/method] "GET")
-                                 (assoc-in [:operation-props ::hydra/returns] target))]
-               (-> property
+                                 (assoc-in [:operation-props ::hydra/returns] target))
+                   min-count (get-in supported-property [::property-props ::hydra/min-count])
+                   max-count (get-in supported-property [::property-props ::hydra/max-count])
+                   min-count (if required
+                               (if (> (or min-count 0) 1) min-count 1)
+                               0)
+                   max-count (if required
+                               (if (> (or max-count 0) min-count) max-count min-count)
+                               max-count)
+                   property-props (-> (get supported-property :property-props)
+                                      (assoc ::hydra/required required)
+                                      (assoc ::hydra/max-count max-count)
+                                      (assoc ::hydra/min-count min-count)
+                                      utils/clean-nils)]
+               (-> supported-property
                    (assoc :operations [operation])
-                   (assoc-in [:property-props ::hydra/required] required)
+                   (assoc :property-props property-props)
                    (assoc-in [:property :rdf-props ::hydra/range] target)
                    (assoc :is-link true)
                    (assoc :is-template false))))

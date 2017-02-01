@@ -1,4 +1,5 @@
 (ns levanzo.spec.schema
+  "Functions providing generators for API components and JSON-LD payloads"
   (:require [levanzo.schema :as schema]
             [levanzo.namespaces :refer [xsd resolve]]
             [levanzo.hydra :as hydra]
@@ -63,22 +64,20 @@
          max-count (-> property-props ::hydra/max-count)
          is-link (-> property :is-link)
          range (-> property :rdf-props ::hydra/range)
-         required (::hydra/required property-props)]
+         required (::hydra/required property-props)
+         property-gen (if is-link
+                        (cond
+                          (some? (get options property-id)) (get options property-id)
+                          :else (s/gen ::jsonld-spec/uri))
+                        (cond (some? (get options property-id)) (get options property-id)
+                              (schema/xsd-uri? range)           (make-xsd-type-gen range)
+                              :else (let [class (hydra/find-class api range)]
+                                      ;; Careful! this will explode with cyclic APIs
+                                      (do
+                                        (make-payload-gen mode class api)))))]
      (tg/tuple
       (tg/return property-id)
-      (tg/vector
-       (if is-link
-         (cond
-           (some? (get options property-id)) (get options property-id)
-           :else (s/gen ::jsonld-spec/uri))
-         (cond (some? (get options property-id)) (get options property-id)
-               (schema/xsd-uri? range)           (make-xsd-type-gen range)
-               :else (let [class (hydra/find-class api range)]
-                       ;; Careful! this will explode with cyclic APIs
-                       (do
-                         (make-payload-gen mode class api)))))
-       (or min-count 1)
-       (or max-count 1))))))
+      (tg/vector property-gen (or min-count 1) (or max-count 1))))))
 
 (defn with-gen-id [g options]
   (tg/bind g
@@ -227,6 +226,42 @@
             (s/gen ::hydra/type)
             (make-properties-map-gen max-properties))))
 
+(defn make-api-nested-literal []
+  (tg/bind
+   (tg/tuple
+    (s/gen ::jsonld-spec/datatype)
+    tg/boolean)
+   (fn [[datatype required]]
+     (tg/tuple
+      (tg/return :literal)
+      (make-literal-property-gen datatype required)))))
+
+(defn make-api-nested-link [next-class-generator]
+  (tg/bind
+   (tg/tuple
+    ;; nested class
+    next-class-generator
+    ;; potential datatype in case we get properties back
+    (s/gen ::jsonld-spec/datatype)
+    ;; link or nested literal?
+    tg/boolean
+    ;; required link
+    tg/boolean)
+   (fn [[class-map-or-uri datatype is-link required]]
+     (if (string? class-map-or-uri)
+       ;; end of recursion we have a link, we generate
+       ;; yet another literal property
+       (tg/tuple
+        (tg/return :literal)
+        (make-literal-property-gen datatype required))
+       (let [class-uri (:uri class-map-or-uri)]
+         (tg/tuple
+          (tg/return :nested)
+          (if is-link
+            (make-link-property-gen class-uri required)
+            (make-literal-property-gen class-uri required))
+          (tg/return class-map-or-uri)))))))
+
 (defn make-api-tree-gen []
   (tg/fmap
    ;; we build the API now
@@ -260,40 +295,11 @@
                                  (tg/vector (tg/one-of
                                              [
                                               ;; nested literal
-                                              (tg/bind
-                                               (tg/tuple
-                                                (s/gen ::jsonld-spec/datatype)
-                                                tg/boolean)
-                                               (fn [[datatype required]]
-                                                 (tg/tuple
-                                                  (tg/return :literal)
-                                                  (make-literal-property-gen datatype required))))
+                                              (make-api-nested-literal)
                                               ;; nested link
-                                              (tg/bind
-                                               (tg/tuple
-                                                ;; nested class
-                                                g
-                                                ;; potential datatype in case we get properties back
-                                                (s/gen ::jsonld-spec/datatype)
-                                                ;; link or nested literal?
-                                                tg/boolean
-                                                ;; required link
-                                                tg/boolean)
-                                               (fn [[class-map-or-uri datatype is-link required]]
-                                                 (if (string? class-map-or-uri)
-                                                   ;; end of recursion we have a link, we generate
-                                                   ;; yet another literal property
-                                                   (tg/tuple
-                                                    (tg/return :literal)
-                                                    (make-literal-property-gen datatype required))
-                                                   (let [class-uri (:uri class-map-or-uri)]
-                                                     (tg/tuple
-                                                      (tg/return :nested)
-                                                      (if is-link
-                                                        (make-link-property-gen class-uri required)
-                                                        (make-literal-property-gen class-uri required))
-                                                      (tg/return class-map-or-uri))))))
+                                              (make-api-nested-link g)
                                               ])
                                             ;; min 1 link, max 3
                                             1 3))))
+                     ;; base case is just a URI
                      (s/gen ::jsonld-spec/uri))))

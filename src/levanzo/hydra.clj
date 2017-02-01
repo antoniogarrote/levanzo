@@ -1,4 +1,7 @@
 (ns levanzo.hydra
+  "This namespace contains functions to define a Hydra API model.
+   Functions are provided to build the main model compoments: clases, properties, links, etc.
+   Some auxiliary functions to query the model are also provided."
   (:require [clojure.spec :as s]
             [clojure.spec.gen :as gen]
             [clojure.test.check.generators :as tg]
@@ -28,7 +31,7 @@
 ;; Hydra common props for all Hydra model elements
 (s/def ::common-props (s/keys :opt [::id ::type ::title ::description]))
 
-(defn generic->jsonld
+(defn- generic->jsonld
   "Sets common RDF properties for all Hydra elements"
   [element jsonld]
   (->> jsonld
@@ -413,7 +416,7 @@
                (s/gen ::property-props)
                (s/gen (s/coll-of ::Operation :max-count 1 :min-count 1))))))
 
-(defn get-shacl [this]
+(defn- get-shacl [this]
   (let [rdf-property-id (-> this :property :common-props ::id)
         sh-property (->> {(resolve "sh:predicate") rdf-property-id}
                          (set-if-some (-> this :property-props ::min-count) (resolve "sh:minCount"))
@@ -789,24 +792,33 @@
   (let [class (find-class api class-id)]
     (-> class :operations)))
 
-
-(defn model-or-uri [model]
-  (if (string? model)
-    model
-    (-> model :common-props ::id)))
-
-(defn find-model [api uri]
+(defn find-model
+  "Finds an model in the API"
+  [api uri]
   (or (find-class api uri)
       (find-supported-property api uri)
       (find-property api uri)))
 
-(defn class-model? [model]
+(defn model-or-uri
+  "Retrieves either a URI if a string URI is passed or the Hydra ID URI if a model element is passed"
+  [model]
+  (if (string? model)
+    model
+    (-> model :common-props ::id)))
+
+(defn class-model?
+  "Checks if the provided model is a Hydra class"
+  [model]
   (= (:uri model) (resolve "hydra:Class")))
 
-(defn collection-model? [model]
+(defn collection-model?
+  "Checks if the provided model is a Hydra collection"
+  [model]
   (= (:uri model) (resolve "hydra:Collection")))
 
-(defn supported-property? [model]
+(defn supported-property?
+  "Checks if the provided model is Hydra supported collection"
+  [model]
   (= (:uri model) (resolve "hydra:SupportedProperty")))
 
 (defn id

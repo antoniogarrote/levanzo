@@ -13,11 +13,11 @@
     (is (s/valid? ::hydra/handler handler))))
 
 (deftest generic->jsonld-test
-  (is (= {"@id" "http://test.com#test"} (hydra/generic->jsonld {::hydra/id "http://test.com#test"} {})))
-  (is (= {"http://www.w3.org/ns/hydra/core#title" "test"} (hydra/generic->jsonld {::hydra/title "test"} {})))
-  (is (= {"http://www.w3.org/ns/hydra/core#title" "test"} (hydra/generic->jsonld {::hydra/title "test"} {"http://www.w3.org/ns/hydra/core#title" "other"})))
-  (is (= {"@type" "http://test.com#test"} (hydra/generic->jsonld {::hydra/type "http://test.com#test"} {})))
-  (is (= {"@type" ["http://test.com#other" "http://test.com#test"]} (hydra/generic->jsonld {::hydra/type "http://test.com#test"} {"@type" "http://test.com#other"}))))
+  (is (= {"@id" "http://test.com#test"} (#'hydra/generic->jsonld {::hydra/id "http://test.com#test"} {})))
+  (is (= {"http://www.w3.org/ns/hydra/core#title" "test"} (#'hydra/generic->jsonld {::hydra/title "test"} {})))
+  (is (= {"http://www.w3.org/ns/hydra/core#title" "test"} (#'hydra/generic->jsonld {::hydra/title "test"} {"http://www.w3.org/ns/hydra/core#title" "other"})))
+  (is (= {"@type" "http://test.com#test"} (#'hydra/generic->jsonld {::hydra/type "http://test.com#test"} {})))
+  (is (= {"@type" ["http://test.com#other" "http://test.com#test"]} (#'hydra/generic->jsonld {::hydra/type "http://test.com#test"} {"@type" "http://test.com#other"}))))
 
 (defn operation-jsonld
   ([method expects returns]

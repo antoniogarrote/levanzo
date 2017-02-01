@@ -1,6 +1,6 @@
 (defproject levanzo "0.2.1"
-  :description "FIXME: write description"
-  :url "http://example.com/FIXME"
+  :description "Levanzo is a Clojure library to build hypermedia driven RESTful APIs using W3C standards"
+  :url "https://github.com/antoniogarrote/levanzo"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :monkeypatch-clojure-test false
@@ -18,4 +18,5 @@
                  [org.clojure/test.check "0.9.0" :scope "test"]
                  ;;; for testing
                  [com.novemberain/monger "3.1.0"]
-                 [http-kit "2.2.0"]])
+                 [http-kit "2.2.0"]]
+  :plugins [[lein-codox "0.10.2"]])

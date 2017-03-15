@@ -58,7 +58,8 @@
 
 (defn gen-for-property
   ([mode property api] (gen-for-property mode property api {}))
-  ([mode {:keys [property-props property]} api options]
+  ([mode {:keys [property-props property] :as supported-property} api options]
+
    (let [property-id (-> property :common-props ::hydra/id)
          min-count (-> property-props ::hydra/min-count)
          max-count (-> property-props ::hydra/max-count)

@@ -8,7 +8,7 @@
             [clojure.string :as string]
             [levanzo.namespaces :refer [resolve]]
             [levanzo.spec.jsonld :as jsonld-spec]
-            [levanzo.utils :refer [clean-nils]]
+            [levanzo.utils :refer [clean-nils conformant]]
             [levanzo.jsonld :refer [add-not-dup assoc-if-some set-if-some link-if-some]]))
 
 (defprotocol JSONLDSerialisable
@@ -115,15 +115,16 @@
             :levanzo.hydra/description
             :levanzo.hydra/expects
             :levanzo.hydra/returns] :as opts}]
-   (map->Operation (clean-nils {:uri (resolve "hydra:Operation")
-                                :common-props (clean-nils {::id id
-                                                           ::title title
-                                                           ::description description
-                                                           ::type type})
-                                :operation-props (clean-nils {::method (or method "GET")
-                                                              ::expects expects
-                                                              ::returns returns})
-                                :handler handler}))))
+   (conformant #'operation ::operation-args opts
+               (map->Operation (clean-nils {:uri (resolve "hydra:Operation")
+                                            :common-props (clean-nils {::id id
+                                                                       ::title title
+                                                                       ::description description
+                                                                       ::type type})
+                                            :operation-props (clean-nils {::method (or method "GET")
+                                                                          ::expects expects
+                                                                          ::returns returns})
+                                            :handler handler})))))
 
 
 (s/def ::method-operation-args (s/keys :opt [::handler
@@ -136,54 +137,63 @@
 
 
 (s/fdef get-operation
-        :args (s/cat :method-operation-args ::operation-args)
+        :args (s/cat :method-operation-args ::method-operation-args)
         :ret (s/and ::Operation
                     #(= (-> % :uri) (resolve "hydra:Operation"))
                     #(= (-> % :operation-props ::method) "GET")))
 (defn get-operation
   "Defines a new Hydra GET operation"
-  ([opts] (operation (assoc opts ::method "GET"))))
+  ([opts]
+   (conformant #'get-operation ::method-operation-args opts
+               (operation (assoc opts ::method "GET")))))
 
 
 (s/fdef post-operation
-        :args (s/cat :method-operation-args ::operation-args)
+        :args (s/cat :method-operation-args ::method-operation-args)
         :ret (s/and ::Operation
                     #(= (-> % :uri) (resolve "hydra:Operation"))
                     #(= (-> % :operation-props ::method) "POST")))
 (defn post-operation
   "Defines a new Hydra POST operation"
-  ([opts] (operation (assoc opts ::method "POST"))))
+  ([opts]
+   (conformant #'post-operation ::method-operation-args opts
+               (operation (assoc opts ::method "POST")))))
 
 
 (s/fdef put-operation
-        :args (s/cat :method-operation-args ::operation-args)
+        :args (s/cat :method-operation-args ::method-operation-args)
         :ret (s/and ::Operation
                     #(= (-> % :uri) (resolve "hydra:Operation"))
                     #(= (-> % :operation-props ::method) "PUT")))
 (defn put-operation
   "Defines a new Hydra PUT operation"
   ([opts]
-   (operation (assoc opts ::method "PUT"))))
+   (conformant #'put-operation ::method-operation-args opts
+               (operation (assoc opts ::method "PUT")))))
 
 
 (s/fdef patch-operation
-        :args (s/cat :method-operation-args ::operation-args)
+        :args (s/cat :method-operation-args ::method-operation-args)
         :ret (s/and ::Operation
                     #(= (-> % :uri) (resolve "hydra:Operation"))
                     #(= (-> % :operation-props ::method) "PATCH")))
 (defn patch-operation
   "Defines a new Hydra PATCH operation"
-  ([opts] (operation (assoc opts ::method "PATCH"))))
+  ([opts]
+   (conformant #'patch-operation ::method-operation-args opts
+               (operation (assoc opts ::method "PATCH")))))
 
 
 (s/fdef delete-operation
-        :args (s/cat :method-operation-args ::operation-args)
+        :args (s/cat :method-operation-args ::method-operation-args)
         :ret (s/and ::Operation
                     #(= (-> % :uri) (resolve "hydra:Operation"))
                     #(= (-> % :operation-props ::method) "DELETE")))
 (defn delete-operation
   "Defines a new Hydra DELETE operation"
-  ([opts] (operation (assoc opts ::method "DELETE"))))
+  ([opts]
+   (conformant #'delete-operation ::method-operation-args opts
+               (operation (assoc opts ::method "DELETE")))))
 
 ;; hydra::SupportedProperty properties
 
@@ -280,16 +290,17 @@
            :levanzo.hydra/title
            :levanzo.hydra/description
            :levanzo.hydra/domain
-           :levanzo.hydra/range]}]
-  (->Property (resolve "hydra:Link")
-              true
-              false
-              (clean-nils {::id id
-                           ::title title
-                           ::description description
-                           ::type type})
-              (clean-nils {::domain domain
-                           ::range range})))
+           :levanzo.hydra/range] :as args}]
+  (conformant #'link ::property-args args
+              (->Property (resolve "hydra:Link")
+                          true
+                          false
+                          (clean-nils {::id id
+                                       ::title title
+                                       ::description description
+                                       ::type type})
+                          (clean-nils {::domain domain
+                                       ::range range}))))
 
 
 (s/fdef templated-link
@@ -307,16 +318,17 @@
            :levanzo.hydra/title
            :levanzo.hydra/description
            :levanzo.hydra/domain
-           :levanzo.hydra/range]}]
-  (->Property (resolve "hydra:TemplatedLink")
-              false
-              true
-              (clean-nils {::id id
-                           ::title title
-                           ::description description
-                           ::type type})
-              (clean-nils {::domain domain
-                           ::range range})))
+           :levanzo.hydra/range] :as args}]
+  (conformant #'templated-link ::property-args args
+              (->Property (resolve "hydra:TemplatedLink")
+                          false
+                          true
+                          (clean-nils {::id id
+                                       ::title title
+                                       ::description description
+                                       ::type type})
+                          (clean-nils {::domain domain
+                                       ::range range}))))
 
 (s/fdef property
         :args (s/cat :property-args ::property-args)
@@ -333,16 +345,17 @@
            :levanzo.hydra/title
            :levanzo.hydra/description
            :levanzo.hydra/domain
-           :levanzo.hydra/range]}]
-  (->Property (resolve "rdf:Property")
-              false
-              false
-              (clean-nils {::id id
-                           ::title title
-                           ::description description
-                           ::type type})
-              (clean-nils {::domain domain
-                           ::range range})))
+           :levanzo.hydra/range] :as args}]
+  (conformant #'property ::property-args args
+              (->Property (resolve "rdf:Property")
+                          false
+                          false
+                          (clean-nils {::id id
+                                       ::title title
+                                       ::description description
+                                       ::type type})
+                          (clean-nils {::domain domain
+                                       ::range range}))))
 
 ;; Hydra/RDF properties options, hydra:required, hydra:writeonly, hydra:readonly
 ;; id type title and description
@@ -468,15 +481,14 @@
                                                        (s/gen ::required)
                                                        (s/gen #{:read :write :update})
                                                        (s/gen ::operations)))))
-
+(s/def ::supported-property-args-list (s/and (s/cat :supported-property-args ::supported-property-args)
+                                             ;; no link/templates cannot have operations
+                                             (fn [{:keys [property operations]}]
+                                               (if (not (or (:is-link property) (:is-template property)))
+                                                 (empty? operations)
+                                                 true))))
 (s/fdef supported-property
-        :args (s/and (s/cat :supported-property-args ::supported-property-args
-                            )
-                     ;; no link/templates cannot have operations
-                     (fn [{:keys [property operations]}]
-                       (if (not (or (:is-link property) (:is-template property)))
-                         (empty? operations)
-                         true)))
+        :args ::supported-property-args-list
         :ret (s/and
               ::SupportedProperty
               #(= (:uri %) (resolve "hydra:SupportedProperty"))))
@@ -492,19 +504,20 @@
            :levanzo.hydra/readonly
            :levanzo.hydra/writeonly
            :levanzo.hydra/min-count
-           :levanzo.hydra/max-count]}]
-  (->SupportedProperty (resolve "hydra:SupportedProperty")
-                       property
-                       (clean-nils {::id id
-                                    ::type type
-                                    ::title title
-                                    ::description description})
-                       (clean-nils {::required required
-                                    ::readonly readonly
-                                    ::writeonly writeonly
-                                    ::min-count min-count
-                                    ::max-count max-count})
-                       (or operations [])))
+           :levanzo.hydra/max-count] :as args}]
+  (conformant #'supported-property ::supported-property-args-list [args]
+              (->SupportedProperty (resolve "hydra:SupportedProperty")
+                                   property
+                                   (clean-nils {::id id
+                                                ::type type
+                                                ::title title
+                                                ::description description})
+                                   (clean-nils {::required required
+                                                ::readonly readonly
+                                                ::writeonly writeonly
+                                                ::min-count min-count
+                                                ::max-count max-count})
+                                   (or operations []))))
 
 
 ;; Hydra Class
@@ -566,14 +579,14 @@
                      :levanzo.hydra/description]
               :or {operations []}
               :as args}]
-  (s/assert ::class-args args)
-  (->SupportedClass (resolve "hydra:Class")
-                    (clean-nils {::id id
-                                 ::title title
-                                 ::description description
-                                 ::type type})
-                    supported-properties
-                    operations))
+  (conformant #'class ::class-args args
+              (->SupportedClass (resolve "hydra:Class")
+                                (clean-nils {::id id
+                                             ::title title
+                                             ::description description
+                                             ::type type})
+                                supported-properties
+                                operations)))
 
 ;; Hydra Collection
 
@@ -634,15 +647,15 @@
                           :levanzo.hydra/description]
                    :or {operations []}
                    :as args}]
-  (s/assert ::collection-args args)
-  (->Collection (resolve "hydra:Collection")
-                is-paginated
-                member-class
-                (clean-nils {::id id
-                             ::title title
-                             ::description description
-                             ::type type})
-                (or operations [])))
+  (conformant #'collection ::collection-args args
+              (->Collection (resolve "hydra:Collection")
+                            is-paginated
+                            member-class
+                            (clean-nils {::id id
+                                         ::title title
+                                         ::description description
+                                         ::type type})
+                            (or operations []))))
 
 (defn collection?
   "Is this model element a hydra:Collection?"
@@ -683,7 +696,7 @@
                                            ::id])
                     #(tg/fmap (fn [[args-coll entrypoint type title description id]]
                                 (let [classes (map (fn [args]
-                                                     (if (some? (::member-class args))
+                                                     (if (some? (::is-paginated args))
                                                        (collection args)
                                                        (class args)))
                                                    args-coll)]
@@ -736,6 +749,7 @@
                               (= (-> supported-class-or-collection :common-props ::id)
                                  [:uri (-> % :ret :api-props ::entrypoint-class)]))
                             (-> % :args :api-args ::supported-classes))))))
+
 (defn api
   "Defines a Hydra ApiDocumentation element"
   [{:keys [:levanzo.hydra/supported-classes
@@ -744,15 +758,16 @@
            :levanzo.hydra/type
            :levanzo.hydra/title
            :levanzo.hydra/description
-           :levanzo.hydra/id]}]
-  (->ApiDocumentation (resolve "hydra:ApiDocumentation")
-                      (clean-nils {::id id
-                                   ::title title
-                                   ::description description
-                                   ::type type})
-                      {::entrypoint entrypoint
-                       ::entrypoint-class entrypoint-class}
-                      supported-classes))
+           :levanzo.hydra/id] :as args}]
+  (conformant #'api ::api-args args
+              (->ApiDocumentation (resolve "hydra:ApiDocumentation")
+                                  (clean-nils {::id id
+                                               ::title title
+                                               ::description description
+                                               ::type type})
+                                  {::entrypoint entrypoint
+                                   ::entrypoint-class entrypoint-class}
+                                  supported-classes)))
 
 (defn find-class
   "Finds a class in the API by ID"

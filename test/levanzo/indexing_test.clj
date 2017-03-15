@@ -59,6 +59,7 @@
                                           [(hydra/get-operation {::hydra/returns (hydra/id PeopleCollection)})]}))
 
 (def API (hydra/api {::hydra/entrypoint "/people"
+                     ::hydra/entrypoint-class (hydra/id PeopleCollection)
                      ::hydra/supported-classes [PeopleCollection
                                                 AddressesCollection
                                                 Person

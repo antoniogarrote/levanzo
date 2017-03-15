@@ -1,4 +1,6 @@
 (ns levanzo.routing
+  "Functions to generate HTTP bindings for an API.
+   It allows to declare routes for elements of the API and generate links for those routes"
   (:require [levanzo.hydra :as hydra]
             [levanzo.namespaces :as lns]
             [levanzo.spec.jsonld :as jsonld-spec]
@@ -79,7 +81,7 @@
 (def ^:dynamic *routes-register* (atom {}))
 (def ^:dynamic *routes* (atom []))
 
-(defn process-routes* [routes]
+(defn- process-routes* [routes]
   (mapv (fn [route]
           (let [{:keys [path model nested]} route
                 model (keyword (hydra/model-or-uri model))]
@@ -174,6 +176,32 @@
                (string/replace-first path "/" "")
                path)]
     (match path)))
+
+(defn find-route-params
+  "Returns the route params defined in the route matching a model component"
+  ([routes model acc]
+   (let [[path path-info] routes
+         acc (cond
+               (keyword? path) (concat acc [path])
+               (coll? path)    (concat acc (filter keyword? path))
+               :else           acc)]
+     (cond
+       (and (keyword? path-info)
+            (= (keyword model) path-info)) [true acc]
+       (coll? path-info)                       (let [found (->> path-info
+                                                                (map #(find-route-params % model acc))
+                                                                (filter (fn [[r _]] (true? r)))
+                                                                first)]
+                                                 (if (some? found) found [false nil]))
+       :else                                 [false nil])))
+  ([model]
+   (let [[found args] (find-route-params @*routes* (hydra/model-or-uri model) [])]
+     (if found args []))))
+
+(defn route-for-model?
+  "Checks if theres a route defined for an API model"
+  [model]
+  (some? (get @*routes-register* (keyword (hydra/model-or-uri model)))))
 
 (defn api-routes
   "Builds the routes of an API"

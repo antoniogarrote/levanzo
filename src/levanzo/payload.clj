@@ -55,6 +55,8 @@
                  vocab)]
      (reset! *context*
              (->> context
+                  (map (fn [[k v]] [(name k) v]))
+                  (into {})
                   (merge {"hydra" (lns/hydra)
                           "rdfs" (lns/rdfs)
                           "xsd" (lns/xsd)
@@ -140,6 +142,38 @@
         link
         (str (or base "") link)))))
 
+(s/fdef get-supported-properties
+        :args (s/cat :jsonld (s/map-of string? any?)
+                     :property ::model
+                     :default any?)
+        :ret (s/coll-of map?))
+(defn get-supported-properties
+  "Returns all the values for a literal property"
+  ([jsonld property default]
+   (s/assert (s/cat :jsonld (s/map-of string? any?)
+                    :property ::model
+                    :default any?)
+             [jsonld property default])
+   (map #(get % "@value") (get jsonld (hydra/id property) default)))
+  ([jsonld property] (get-supported-properties jsonld property nil)))
+
+(s/fdef get-supported-property
+        :args (s/cat :jsonld (s/map-of string? any?)
+                     :property ::model
+                     :default any?)
+        :ret map?)
+(defn get-supported-property
+  "Returns the first value for a property"
+  ([jsonld property default]
+   (s/assert (s/cat :jsonld (s/map-of string? any?)
+                    :property ::model
+                    :default any?)
+             [jsonld property default])
+   (let [res (get-supported-properties jsonld property default)]
+     (if (> (count res) 1)
+       (throw (Exception. (str "Error retrieving property " (hydra/id property) " multiple values retrieved")))
+       (first res))))
+  ([jsonld property] (get-supported-property jsonld property nil)))
 
 (s/fdef jsonld
         :args (s/with-gen
@@ -161,7 +195,8 @@
   "Builds a new JSON-LD object"
   [& props]
   (s/assert (s/coll-of (s/or :jsondl-pair (s/map-of string? any?)
-                             :map-tuple (s/tuple string? any?))) props)
+                             :map-tuple (s/tuple string? any?)))
+            props)
   (let [json (into {} props)
         context (get json "@context" {})
         context (merge @*context* context)]

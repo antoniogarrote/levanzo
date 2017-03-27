@@ -175,6 +175,21 @@
        (first res))))
   ([jsonld property] (get-supported-property jsonld property nil)))
 
+(defn get-supported-links
+  "Returns all the links for a property"
+  [jsonld property]
+  (->> (get jsonld (hydra/id property) [])
+       (map #(get % "@id"))
+       (filter some?)))
+
+(defn get-supported-link
+  "Extracts the first link for a list of supported links, fails if more than one link is found"
+  [jsonld property]
+  (let [link (first (get-supported-links jsonld property))]
+    (if (some? link)
+      link
+      (throw (Exception. (str "Error retrieving link " (hydra/id property) " multiple links retrieved"))))))
+
 (s/fdef jsonld
         :args (s/with-gen
                 (s/cat :props (s/+ (s/or :map-tuple   (s/tuple string? any?)
@@ -276,6 +291,33 @@
      (let [id-args {:model model :args args :base base}
            id-args (->> id-args (filter (fn [[k v]] (some? v))) (into {}))]
        {property-uri (id id-args)}))))
+
+(s/def ::link ::hydra/id)
+(s/fdef supported-external-link
+        :args (s/cat :args (s/keys :req-un [::property
+                                            ::link]))
+        :ret (s/map-of string? any?))
+(defn supported-external-link
+  "Geneates a JSON-LD [property {@id link}] pair for an external URL"
+  [{:keys [property link] :as args}]
+  (s/assert (s/keys :req-un [::property ::link]) args)
+  (let [property-uri (uri-or-model property)]
+    {property-uri {"@id" link}}))
+
+(defn assoc-supported-link
+  "updates a link into a JSON-LD payload"
+  [jsonld options]
+  (let [link (supported-link options)]
+    (merge jsonld link)))
+
+(defn assoc-supported-property
+  "updates a property into a JSON-LD payload"
+  [jsonld options]
+  (let [value (get options :value)
+        value (if (map? value) value {"@value" value})
+        options (assoc options :value value)
+        property (supported-property options)]
+    (merge jsonld property)))
 
 (s/def ::current integer?)
 (s/def ::first integer?)

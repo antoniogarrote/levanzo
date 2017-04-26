@@ -1,4 +1,4 @@
-(defproject levanzo "0.2.2-SNAPSHOT"
+(defproject levanzo "0.2.3-SNAPSHOT"
   :description "Levanzo is a Clojure library to build hypermedia driven RESTful APIs using W3C standards"
   :url "https://github.com/antoniogarrote/levanzo"
   :license {:name "Eclipse Public License"

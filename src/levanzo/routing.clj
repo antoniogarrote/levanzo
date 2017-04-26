@@ -19,6 +19,8 @@
                                          :empty-path (s/with-gen #(= % "")
                                                        #(tg/return ""))
                                          :path ::jsonld-spec/path
+                                         :catch-all boolean?
+                                         :regexp #(instance? java.util.regex.Pattern %)
                                          :var  keyword?))))
 
 

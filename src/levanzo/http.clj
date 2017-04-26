@@ -165,13 +165,17 @@
                        response
                        {:body response})
         status (:status response-map 200)]
-    (if (= status 200)
-      (-> response-map
-          (assoc :headers (:headers response-map {}))
-          (validate-response validations-map mode method model)
-          (response->jsonld context)
-          (assoc :status status))
-      response-map)))
+    (cond
+      ;; don't process, just pass the response
+      (:raw response-map) (dissoc response-map :raw)
+      ;; regular 200 response, do all processing
+      (= status 200)      (-> response-map
+                              (assoc :headers (:headers response-map {}))
+                              (validate-response validations-map mode method model)
+                              (response->jsonld context)
+                              (assoc :status status))
+      ;; Not 200, pass raw
+      :else               response-map)))
 
 (defn- get-handler [request route-params handler context]
   (try

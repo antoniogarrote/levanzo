@@ -523,15 +523,19 @@
         {"@value" value}))))
 
 (defn encode-uri [uri]
-  (let [{:keys [:protocol :username :password :host :port :path :query :anchor]} (url/url uri)
-        encoded-query (->> query
-                           (map (fn [[k v]] (str k "=" (url/url-encode v))))
-                           (string/join "&"))]
-    (str protocol "://" host
-         (if (and (some? port) (> port 0)) (str ":" port) "")
-         path
-         (if (some? query) (str "?" encoded-query) "")
-         (if (some? anchor) (str "#" anchor) ""))))
+  (try
+    (let [{:keys [:protocol :username :password :host :port :path :query :anchor]} (url/url uri)
+          encoded-query (->> query
+                             (map (fn [[k v]] (str k "=" (url/url-encode v))))
+                             (string/join "&"))]
+      (str protocol "://" host
+           (if (and (some? port) (> port 0)) (str ":" port) "")
+           path
+           (if (some? query) (str "?" encoded-query) "")
+           (if (some? anchor) (str "#" anchor) "")))
+    (catch Exception ex
+      (println "Error encoding uri " uri)
+      (throw ex))))
 
 (defn u ([x] (str "<" (encode-uri x) ">")))
 (defn l ([l] (str "\"" l "\"")))

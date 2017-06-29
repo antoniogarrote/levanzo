@@ -1,6 +1,7 @@
 (ns levanzo.indexing
   (:require [clojure.spec :as s]
             [clojure.string :as string]
+            [cemerick.url :as url]
             [levanzo.hydra :as hydra]
             [levanzo.payload :refer [u d l] :as payload]
             [levanzo.routing :as routing]
@@ -405,17 +406,40 @@
                              pagination
                              request))))))
 
+(def order ["subject" "predicate" "object" "page" "per-page" "group"])
+
+(defn reorder-query-string [qs]
+  (when (some? qs)
+    (let [components (string/split qs #"&")]
+      (->> order
+           (map (fn [param] (->> components
+                                (filter (fn [component] (string/starts-with? component param)))
+                                first
+                                )))
+           (filter some?)
+           (reduce (fn [acc e] (str acc "&" e)))
+           ))))
+
+(defn fragment-uri [url] (str "<" url ">"))
+
+(defn maybe-encode [value]
+  (if (or (string/starts-with? value "http%3A%2F%2F")
+          (string/starts-with? value "https%3A%2F%2F")
+          (string/starts-with? value "%22"))
+    value
+    (url/url-encode value)))
+
 (defn index-response [params-map {:keys [results page group per-page count] :as output} {:keys [server-port server-name uri query-string scheme] :as request}]
   (let [base-uri  (reduce (fn [acc k]
                             (if (some? (get params-map k))
                               (str acc
                                    (if (string/ends-with? acc "?") "" "&")
-                                   (name k) "=" (get params-map k))
+                                   (name k) "=" (maybe-encode (get params-map k)))
                               acc))
                           (str (name scheme) "://" server-name (if (some? server-port) (str ":" server-port) "") uri "?")
                           [:subject :predicate :object])
         base-uri (if (string/ends-with? base-uri "?") (string/replace base-uri "?" "") base-uri)
-        this-uri (str (name scheme) "://" server-name (if (some? server-port) (str ":" server-port) "") uri (if (some? query-string) "?" "") query-string)
+        this-uri (str (name scheme) "://" server-name (if (some? server-port) (str ":" server-port) "") uri (if (some? query-string) "?" "") (reorder-query-string query-string))
         base (str (name scheme) "://" server-name (if (some? server-port) (str ":" server-port) ""))
         metadata-uri (str this-uri "#metadata")
         dataset-uri (str this-uri "#dataset")
@@ -425,14 +449,14 @@
                   (payload/context)
                   ;; the meta data of the ldf
                   [[
-                    (u metadata-uri)
+                    (fragment-uri metadata-uri)
                     [
-                     [(u metadata-uri) "foaf:primaryTopic" (u this-uri)]
-                     [(u dataset-uri) "hydra:member" (u dataset-uri)]
-                     [(u dataset-uri) "a" "void:Dataset, hydra:Collection"]
-                     [(u dataset-uri) "void:subset" (u base-uri)]
-                     [(u dataset-uri) "void:uriLookupEndpoint" (l (str base (:uri request) "{?subject,predicate,object}"))]
-                     [(u dataset-uri) "hydra:search" "_:triplePattern"]
+                     [(fragment-uri metadata-uri) "foaf:primaryTopic" (fragment-uri this-uri)]
+                     [(fragment-uri dataset-uri) "hydra:member" (fragment-uri dataset-uri)]
+                     [(fragment-uri dataset-uri) "a" "void:Dataset, hydra:Collection"]
+                     [(fragment-uri dataset-uri) "void:subset" (fragment-uri base-uri)]
+                     [(fragment-uri dataset-uri) "void:uriLookupEndpoint" (l (str base (:uri request) "{?subject,predicate,object}"))]
+                     [(fragment-uri dataset-uri) "hydra:search" "_:triplePattern"]
                      ["_:triplePattern" "hydra:template" (l (str base (:uri request) "{?subject,predicate,object}"))]
                      ["_:triplePattern" "hydra:variableRepresentation" "hydra:ExplicitRepresentation"]
                      ["_:triplePattern" "hydra:mapping" "_:subject"]
@@ -445,32 +469,37 @@
                      ["_:object" "hydra:variable" (l "object")]
                      ["_:object" "hydra:property" "rdf:object"]
 
-                     [(u this-uri) "void:subset" (u base-uri)]
+                     [(fragment-uri this-uri) "void:subset" (fragment-uri base-uri)]
                      (if (some? results)
-                       [(u this-uri) "a" "hydra:PartialCollectionView"]
-                       [(u this-uri) "a" "hydra:Collection"])
-                     [(u this-uri) "dcterms:source" (u dataset-uri)]
+                       [(fragment-uri this-uri) "a" "hydra:PartialCollectionView"]
+                       [(fragment-uri this-uri) "a" "hydra:Collection"])
+                     [(fragment-uri this-uri) "dcterms:source" (fragment-uri dataset-uri)]
                      (if (and (some? results) (some? count))
-                       [(u this-uri) "hydra:totalItems" (d (or count 0) "xsd:integer")]
-                       [(u this-uri) "hydra:totalItems" (d 10000 "xsd:integer")])
+                       [(fragment-uri this-uri) "hydra:totalItems" (d (or count 0) "xsd:integer")]
+                       [(fragment-uri this-uri) "hydra:totalItems" (d 10000 "xsd:integer")])
                      (if (and (some? results) (some? count))
-                       [(u this-uri) "void:triples" (d (or count 0) "xsd:integer")]
-                       [(u this-uri) "void:triples" (d 10000 "xsd:integer")])
+                       [(fragment-uri this-uri) "void:triples" (d (or count 0) "xsd:integer")]
+                       [(fragment-uri this-uri) "void:triples" (d 10000 "xsd:integer")])
                      (if (some? results)
-                       [(u this-uri) "hydra:first" (u (str base-uri (if (string/index-of base-uri "?") "&" "?") "page=" 1 "&group=" 0 "&per-page=" (or per-page 50)))]
+                       [(fragment-uri this-uri) "hydra:first" (fragment-uri (str base-uri (if (string/index-of base-uri "?") "&" "?") "page=" 1 "&per-page=" (or per-page 50) "&group=" 0 ))]
                        nil)
                      (if (some? page)
-                       [(u this-uri) "hydra:next" (u (str base-uri (if (string/index-of base-uri "?") "&" "?") "page=" (or page 1) "&group=" (or group 0) "&per-page=" (or per-page 50)))]
+                       [(fragment-uri this-uri) "hydra:next" (fragment-uri (str base-uri (if (string/index-of base-uri "?") "&" "?") "page=" (or page 1) "&per-page=" (or per-page 50) "&group=" (or group 0)))]
                        nil)
                      ]
                     ]
                    ;; the actual data in the fragment
                    ["" (map (fn [{:keys [s p o]}]
-                              [(u (get s "@id")) (u (get p "@id")) (if (some? (get o "@id"))
-                                                                     (u (get o "@id"))
-                                                                     (if (some? (get o "@type"))
-                                                                       (d (get o "@value") (get o "@type"))
-                                                                       (l (get o "@value"))))])
+                              (try
+                                [(u (get s "@id")) (u (get p "@id")) (if (some? (get o "@id"))
+                                                                       (u (get o "@id"))
+                                                                       (if (some? (get o "@type"))
+                                                                         (d (get o "@value") (get o "@type"))
+                                                                         (l (get o "@value"))))]
+                                (catch Exception ex
+                                  (println "ERROR ENCODING TRIPLE")
+                                  (prn [s p o])
+                                  (throw ex))))
                             results)]
                    ])]
     {:body response :headers {"Content-Type" "application/trig;charset=utf-8"} :status 200}))

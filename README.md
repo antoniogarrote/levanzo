@@ -15,7 +15,7 @@ The library is built on top of the following list of W3C standards and standard 
 - [JSON-LD](http://json-ld.org/spec/latest/json-ld/) as the preferred data format
 - [Hydra](http://www.hydra-cg.com/spec/latest/core/) as the API vocabulary
 - [SHACL](https://www.w3.org/TR/shacl/) as the declarative constraint language
-- [Triple Pattern Fragments](https://www.hydra-cg.com/spec/latest/triple-pattern-fragments/) as the interface for API queries
+- [Triple Pattern Fragments](http://www.hydra-cg.com/spec/latest/triple-pattern-fragments/) as the interface for API queries
 - [SPARQL](https://www.w3.org/TR/sparql11-overview/) as the query language over the API resources
 
 An example implementation of the Markus Lanthaler's Issues API using MongoDB as the backend [can be found in the examples](examples/issues).
@@ -621,7 +621,7 @@ Once we have generated the HTTP bindings for the API, we can access the data in 
 
 One of the advantages of using Hydra as the basis of an API is that we are not only building RESTful APIs with great support for Hypermedia, we are also describing a normalised data graph based on the RDF data model. Levanzo offers an additional interface to access the information in this data graph that can be used to run graph queries over it using the SPARQL query language.
 
-The functionality is based in the [Triple Pattern Fragments](https://www.hydra-cg.com/spec/latest/triple-pattern-fragments/) spec proposal. The idea is that any JSON-LD document can be viewed as a collection of basic units called triples, assertions composed of subject-predicate-object compmonents.
+The functionality is based in the [Triple Pattern Fragments](http://www.hydra-cg.com/spec/latest/triple-pattern-fragments/) spec proposal. The idea is that any JSON-LD document can be viewed as a collection of basic units called triples, assertions composed of subject-predicate-object compmonents.
 
 For example, we can use the `levanzo.payload/->triples` function to transform a document into triples:
 
